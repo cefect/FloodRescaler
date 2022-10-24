@@ -16,31 +16,25 @@ from qgis.core import (QgsProcessing,
                        QgsFeatureSink,
                        QgsProcessingException, #still works
                        QgsProcessingAlgorithm,
-                       QgsProcessingParameterFeatureSource,
-                       QgsProcessingParameterFeatureSink)
+                       QgsProcessingParameterRasterLayer,
+                       QgsProcessingParameterRasterDestination,
+                       QgsProcessingParameterNumber
+                       )
 
 
 
 class WSHAverage(QgsProcessingAlgorithm):
     """
-    This is an example algorithm that takes a vector layer and
-    creates a new identical one.
-
-    It is meant to be used as an example of how to create your own
-    algorithms and explain methods and variables used to do it. An
-    algorithm like this will be available in all elements, and there
-    is not need for additional work.
-
-    All Processing algorithms should extend the QgsProcessingAlgorithm
-    class.
+    Aggregating (upscalig) flood layers through \'WSH Averaging\'
     """
 
     # Constants used to refer to parameters and outputs. They will be
     # used when calling the algorithm from another algorithm, or when
     # calling from the QGIS console.
 
-    INPUT = 'INPUT'
-    OUTPUT = 'OUTPUT'
+    INPUT_RASTER = 'INPUT'
+    INPUT_UPSCALE = 'INPUT_S2'
+    OUTPUT_RASTER = 'OUTPUT'
 
     def tr(self, string):
         """
@@ -49,7 +43,7 @@ class WSHAverage(QgsProcessingAlgorithm):
         return QCoreApplication.translate('Processing', string)
 
     def createInstance(self):
-        return ExampleProcessingAlgorithm()
+        return WSHAverage()
 
     def name(self):
         """
@@ -59,21 +53,21 @@ class WSHAverage(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'myscript'
+        return 'wsh_averaging'
 
     def displayName(self):
         """
         Returns the translated algorithm name, which should be used for any
         user-visible display of the algorithm name.
         """
-        return self.tr('My Script')
+        return self.tr('WSH Averaging')
 
     def group(self):
         """
         Returns the name of the group this algorithm belongs to. This string
         should be localised.
         """
-        return self.tr('Example scripts')
+        return self.tr('FloodRescaling')
 
     def groupId(self):
         """
@@ -83,7 +77,7 @@ class WSHAverage(QgsProcessingAlgorithm):
         contain lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'examplescripts'
+        return 'floodrescaler'
 
     def shortHelpString(self):
         """
@@ -91,7 +85,7 @@ class WSHAverage(QgsProcessingAlgorithm):
         should provide a basic description about what the algorithm does and the
         parameters and outputs associated with it..
         """
-        return self.tr("Example algorithm short description")
+        return self.tr("Aggregating (upscalig) flood layers through \'WSH Averaging\'")
 
     def initAlgorithm(self, config=None):
         """
@@ -99,23 +93,25 @@ class WSHAverage(QgsProcessingAlgorithm):
         with some other properties.
         """
 
-        # We add the input vector features source. It can have any kind of
-        # geometry.
         self.addParameter(
-            QgsProcessingParameterFeatureSource(
-                self.INPUT,
-                self.tr('Input layer'),
-                [QgsProcessing.TypeVectorAnyGeometry]
+            QgsProcessingParameterRasterLayer(
+                self.INPUT_RASTER,
+                self.tr('WSH layer')
             )
         )
 
-        # We add a feature sink in which to store our processed features (this
-        # usually takes the form of a newly created vector layer when the
-        # algorithm is run in QGIS).
         self.addParameter(
-            QgsProcessingParameterFeatureSink(
-                self.OUTPUT,
-                self.tr('Output layer')
+            QgsProcessingParameterRasterDestination(
+                self.OUTPUT_RASTER,
+                self.tr("Output aggregated WSH layer")
+            )
+        )
+        
+        self.addParameter(
+            QgsProcessingParameterNumber(
+                self.INPUT_UPSCALE,
+                self.tr('Upscale'),
+                defaultValue=10.0
             )
         )
 
