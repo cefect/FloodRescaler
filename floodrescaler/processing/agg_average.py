@@ -10,6 +10,7 @@
 *                                                                         *
 ***************************************************************************
 """
+import pprint
 from qgis import processing
 from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (QgsProcessing,
@@ -21,9 +22,11 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingParameterNumber,
                        QgsProcessingParameterString,
                        QgsRasterLayer ,
+                       QgsCoordinateTransformContext,
+ 
                        )
 
-
+from qgis.analysis import QgsNativeAlgorithms, QgsRasterCalculatorEntry, QgsRasterCalculator
  
 class AggAverage(QgsProcessingAlgorithm):
     """
@@ -97,11 +100,9 @@ class AggAverage(QgsProcessingAlgorithm):
         parameters and outputs associated with it..
         """
         return self.tr(
-            """Aggregating (upscalig) flood layers with methods described in Bryant et. al., (2022).
-            Two methods are provided, both use simple averaging to compute the DEM grid.
-             \'WSH Averaging\': usees the WSH (water depths) grid as the primary 
-            layer, which is aggregated through simple averaging, while the WSE grid is computed via addition
-            with the DEM grid. \'WSE Averaging\' first aggregates the WSE grid, before filtering against the DEM, then subtracting to compute the WSH grid.            
+            """Aggregating (upscalig) flood layers with methods described in Bryant et. al., (2022). Two methods are provided, both use simple averaging to compute the DEM grid.
+             \'WSH Averaging\': usees the WSH (water depths) grid as the primary layer, which is aggregated through simple averaging, while the WSE grid is computed via addition with the DEM grid.
+             \'WSE Averaging\' first aggregates the WSE grid, before filtering against the DEM, then subtracting to compute the WSH grid.            
             """)
 
     def initAlgorithm(self, config=None):
@@ -132,12 +133,12 @@ class AggAverage(QgsProcessingAlgorithm):
         # pars
         #======================================================================= 
         self.addParameter(
-            QgsProcessingParameterNumber(self.INPUT_UPSCALE, self.tr('upscaling value'), defaultValue=10.0)
+            QgsProcessingParameterNumber(self.INPUT_UPSCALE, self.tr('upscaling value'), defaultValue=2.0)
         )
         
         # add methods parameter with some hints
         param = QgsProcessingParameterString(self.INPUT_METHOD, self.tr('aggregation method'), defaultValue='WSH Averaging', multiLine=False)
-        param.setMetadata({'widget_wrapper':{ 'value_hints': self.methods_d.keys() }})
+        param.setMetadata({'widget_wrapper':{ 'value_hints': list(self.methods_d.keys()) }})
         self.addParameter(param)
         
         #=======================================================================
@@ -156,18 +157,22 @@ class AggAverage(QgsProcessingAlgorithm):
             obj(self.OUTPUT_WSH, self.tr('WSH s2 layer'))
         )
 
-    def processAlgorithm(self, parameters, context, feedback):
+    def processAlgorithm(self, params, context, feedback):
         """
         Here is where the processing itself takes place.
         """
         #=======================================================================
+        # defaults
+        #=======================================================================
+        feedback.pushInfo('starting w/ \n%s'%(pprint.pformat(params, width=30)))
+        #=======================================================================
         # retrieve inputs---
         #=======================================================================
         #=======================================================================
-        # rasters
+        # input rasters
         #=======================================================================
         def get_rlay(attn):
-            inrlay =  self.parameterAsRasterLayer(parameters, getattr(self, attn), context)
+            inrlay =  self.parameterAsRasterLayer(params, getattr(self, attn), context)
             if not isinstance(inrlay, QgsRasterLayer):
                 raise QgsProcessingException(f'bad type on {attn}')
             
@@ -182,25 +187,45 @@ class AggAverage(QgsProcessingAlgorithm):
         #check consistency
         assert_extent_equal(input_dem, input_wse, msg='DEM vs. WSE')
         assert_extent_equal(input_dem, input_wsh, msg='DEM vs. WSH')
+        
+        #TODO: check null status
 
         feedback.pushInfo('finished loading raster layers')
         
         #=======================================================================
         # params
         #=======================================================================
-        mName = self.parameterAsString(parameters, self.INPUT_METHOD, context)
-        scale = self.parameterAsDouble(parameters, self.INPUT_UPSCALE, context)
+        mName = self.parameterAsString(params, self.INPUT_METHOD, context)
+        scale = self.parameterAsDouble(params, self.INPUT_UPSCALE, context)
         
         feedback.pushInfo(f'running with \'{mName}\' and scale={scale:.2f}')
         
         #=======================================================================
+        # output rasters
+        #=======================================================================
+        #=======================================================================
+        # OUTPUT_DEM = 'OUTPUT_DEM'
+        # OUTPUT_WSE = 'OUTPUT_WSE'
+        # OUTPUT_WSH = 'OUTPUT_WSH'
+        # def get_orlay(attn):
+        #     return self.parameterAsOutputLayer(parameters, getattr(self, attn), context)
+        #     
+        # output_dem = get_orlay('OUTPUT_DEM')
+        # output_wsh = get_orlay('OUTPUT_WSH')
+        # output_wse = get_orlay('OUTPUT_WSE')
+        #=======================================================================
+        
+        if feedback.isCanceled():
+            return {}
+        #=======================================================================
         # exceute specified method
         #=======================================================================.
-        args = (input_dem, input_wsh,  input_wse, scale)
+        args = (params, input_dem, input_wsh,  input_wse, scale, context, feedback)
         if self.methods_d[mName] == 'direct':
-            self.agg_direct(*args)
+            res_d = self.agg_direct(*args)       
+        
         elif self.methods_d[mName] == 'filter':
-            self.agg_filter(*args)
+            res_d = self.agg_filter(*args)
         else:
             raise QgsProcessingException(f'unrecognized method {mName}')
 
@@ -229,19 +254,193 @@ class AggAverage(QgsProcessingAlgorithm):
         # statistics, etc. These should all be included in the returned
         # dictionary, with keys matching the feature corresponding parameter
         # or output names.
-        return {self.OUTPUT_DEM: 'output_dem'}
+        return res_d
     
-    def agg_direct(self, dem1, wsh1, wse1, scale):
+    
+    def agg_simple(self, inp, scale, 
+                   context=None, feedback=None,
+                   output='TEMPORARY_LAYER', 
+                   ):
+        """apply gdal warp"""
+        
+        feedback.pushInfo(f'gdalwarp on {inp}')
+        pars_d = { 'DATA_TYPE' : 0, 'EXTRA' : '', 
+                  'INPUT' : inp, 
+                  'OUTPUT' : output, #only matters if a filepath si specified? 
+                  'MULTITHREADING' : False, 
+                  'NODATA' : -9999, 
+                  'OPTIONS' : '',                  
+                  'RESAMPLING' : 0,  #nearest
+                  'SOURCE_CRS' : None, 'TARGET_CRS' : None, 'TARGET_EXTENT' : None, 'TARGET_EXTENT_CRS' : None, 
+                  'TARGET_RESOLUTION' : scale}
+        
+        #gives a filepath regardless
+        return processing.run('gdal:warpreproject', pars_d, 
+                              context=context, feedback=feedback, is_child_algorithm=True)['OUTPUT']
+                              
+    def gdal_calc_1(self, inp, formula, output='TEMPORARY_OUTPUT', **kwargs):
+        """run gdal raster calc on a single raster. useful for masking operations"""
+        
+        pars_d = { 
+            'INPUT_A' : inp, 'BAND_A' : 1, 'FORMULA':formula,  
+            #'FORMULA' : '(A!=0)/(A!=0)',           
+            'NO_DATA' : -9999,  'OUTPUT' : output, 'RTYPE' : 5, 
+            #'BAND_B' : None, 'BAND_C' : None, 'BAND_D' : None, 'BAND_E' : None, 'BAND_F' : None, 
+            #'INPUT_B' : None, 'INPUT_C' : None, 'INPUT_D' : None, 'INPUT_E' : None, 'INPUT_F' : None, 'EXTRA' : '',  'OPTIONS' : '',
+                   }
+        
+        return self._gdal_calc(pars_d, **kwargs)
+                              
+    def gdal_calc_add(self, inpA, inpB, output='TEMPORARY_OUTPUT', **kwargs):
+        """add two rasters together"""
+        
+        pars_d = { 
+            'INPUT_A' : inpA, 'BAND_A' : 1, 'INPUT_B' : inpB, 'BAND_B' : 1, 
+            'FORMULA':'A+B',            
+            'NO_DATA' : -9999,  'OUTPUT' : output, 'RTYPE' : 5, 
+            #'BAND_B' : None, 'BAND_C' : None, 'BAND_D' : None, 'BAND_E' : None, 'BAND_F' : None, 
+            #'INPUT_B' : None, 'INPUT_C' : None, 'INPUT_D' : None, 'INPUT_E' : None, 'INPUT_F' : None, 'EXTRA' : '',  'OPTIONS' : '',
+                   }
+        
+        return self._gdal_calc(pars_d, **kwargs)
+                              
+    def _gdal_calc(self, pars_d, context=None, feedback=None):
+        """
+        help(processing.run)
+        help(processing)
+        
+        help(processing.runAndLoadResults)
+        """
+        return processing.run('gdal:rastercalculator', pars_d, 
+                              context=context, feedback=feedback, is_child_algorithm=True)['OUTPUT']
+    
+    def agg_direct(self, params, dem1, wsh1, wse1, scale, context=None, feedback=None):
         """WSH Averaging method"""
+        cf_kwargs = dict(context=context, feedback=feedback)    
+        
+ 
+        # simple DEM aggregate
+        dem2_fp = self.agg_simple(dem1, scale,  
+                                  #output=params['OUTPUT_DEM'],
+                                   **cf_kwargs)
+        
+        #simple WSH aggregate
+        wsh2_fp = self.agg_simple(wsh1, scale,  output=params['OUTPUT_DEM'], **cf_kwargs)
+        
+        if feedback.isCanceled():
+            return {} 
+        
+        #=======================================================================
+        # #compute wse
+        #=======================================================================
+        feedback.pushInfo('computing WSE')
+        #mask out zeros
+        wsh2_maskd_fp = self.gdal_calc_1(wsh2_fp,'A*(A!=0)/(A!=0)', **cf_kwargs)
+        
+        #DEm + WSH
+        wse2_fp = self.gdal_calc_add(wsh2_maskd_fp, dem2_fp, output=params['OUTPUT_WSE'], **cf_kwargs)
+         
+        
+        
+        return {self.OUTPUT_DEM:dem2_fp, self.OUTPUT_WSH:wsh2_fp, self.OUTPUT_WSE:wse2_fp}
         
     
-    def agg_filter(self, dem1, wsh1, wse1, scale):
+    def agg_filter(self, dem1, wsh1, wse1, scale, context, feedback):
         """WSH Averaging method"""
+        
+        
+    def __enter__(self,*args,**kwargs):
+        return self
     
 #===============================================================================
 # HELPERS
 #===============================================================================
 """cant do imports without creating a provider and a plugin"""
+
+
+class RasterCalc(object):
+    
+    def __init__(self, ref_lay, feedback=None):
+        assert isinstance(ref_lay, QgsRasterLayer)
+        self.ref_lay = ref_lay
+        
+        
+        
+        self.feedback = feedback
+        self.rasterEntries = list()
+        
+        self.ref_rcentry = self.add_rcentry(ref_lay)
+        
+    def add_rcentry(self, rlay, bandNumber=1):
+        """add a QgsRasterCalculatorEntry"""
+ 
+        #=======================================================================
+        # check
+        #=======================================================================
+        assert isinstance(rlay, QgsRasterLayer)
+        
+        #=======================================================================
+        # build the entry
+        #=======================================================================
+        rcentry = QgsRasterCalculatorEntry()
+        rcentry.raster = rlay  # not accesesible for some reason
+        rcentry.ref = '%s@%i' % (rlay.name(), bandNumber)
+        rcentry.bandNumber = bandNumber
+        
+        self.rasterEntries.append(rcentry)
+        return rcentry
+    
+    def rcalc(self, formula, output,
+              ref_lay=None, rasterEntries=None):
+        #=======================================================================
+        # defaults
+        #=======================================================================
+        if ref_lay is None: ref_lay = self.ref_lay
+        if rasterEntries is None: rasterEntries = self.rasterEntries
+        
+        assert isinstance(rasterEntries, list)
+        #=======================================================================
+        # assemble parameters
+        #=======================================================================
+
+        d = dict(
+                formula=formula,
+                ofp=output,
+                outputExtent=ref_lay.extent(),
+                outputFormat='GTiff',
+                crs=self.qproj.crs(),
+                nOutputColumns=ref_lay.width(),
+                nOutputRows=ref_lay.height(),
+                crsTrnsf=QgsCoordinateTransformContext(),
+                rasterEntries=rasterEntries,
+            )
+        #=======================================================================
+        # execute
+        #=======================================================================
+        
+        rcalc = QgsRasterCalculator(d['formula'], d['ofp'],
+                                     d['outputFormat'], d['outputExtent'], d['crs'],
+                                     d['nOutputColumns'], d['nOutputRows'], d['rasterEntries'], d['crsTrnsf'])
+        
+        try:
+            result = rcalc.processCalculation(feedback=self.feedback)
+        except Exception as e:
+            raise QgsProcessingException('failed to processCalculation w/ \n    %s' % e)
+    
+        #=======================================================================
+        # check    
+        #=======================================================================
+        if not result == 0:
+            raise QgsProcessingException('formula=%s failed w/ \n    %s' % (formula, rcalc.lastError()))
+        
+        self.feedback.pushInfo(f'finished on {output}')
+        
+        return output
+    
+    def __enter__(self, *args, **kwargs):
+        return self
+
+
 def assert_extent_equal(left, right, msg='',): 
     """ extents check"""
     if not __debug__: # true if Python was not started with an -O option
