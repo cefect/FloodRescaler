@@ -3,7 +3,7 @@ Created on Oct. 24, 2022
 
 @author: cefect
 '''
-import os, pathlib, pytest
+import os, pathlib, pytest, logging, sys
 from pytest_qgis.utils import clean_qgis_layer
 from qgis.core import (
     QgsRasterLayer, QgsProject, QgsProcessingFeedback, QgsProcessingContext
@@ -24,17 +24,45 @@ def get_rlay(caseName, layName):
     assert os.path.exists(fp), layName
     
     return QgsRasterLayer(fp, f'{caseName}_{layName}')
+
+
+class MyFeedBackQ(QgsProcessingFeedback):
+    """special feedback object for testing"""
+    
+    def __init__(self,logger, *args, **kwargs):        
+        self.logger=logger.getChild('FeedBack')        
+        super().__init__(*args, **kwargs)
+        
+    def pushInfo(self, info):
+        self.logger.info(info)
+        
+    def pushDebugInfo(self, info):
+        self.logger.debug(info)
     
 #===============================================================================
 # fixtures
 #===============================================================================
+
+@pytest.fixture(scope='session')
+def logger():
+    logging.basicConfig(
+                #filename='xCurve.log', #basicConfig can only do file or stream
+                force=True, #overwrite root handlers
+                stream=sys.stdout, #send to stdout (supports colors)
+                level=logging.INFO, #lowest level to display
+                )
+    
+    return logging.getLogger('r')
+    
+
+
 @pytest.fixture(scope='session')
 def qproj(qgis_app, qgis_processing):
     return QgsProject.instance()
 
 @pytest.fixture(scope='session')
-def feedback(qproj):
-    return QgsProcessingFeedback(False)
+def feedback(qproj, logger):
+    return MyFeedBackQ(logger, False)
 
 @pytest.fixture(scope='session')
 def context(qproj):

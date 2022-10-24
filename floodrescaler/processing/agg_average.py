@@ -219,7 +219,7 @@ class AggAverage(QgsProcessingAlgorithm):
         return res_d
     
     
-    def agg_simple(self, inp, scale, 
+    def _agg_simple(self, inp, scale, 
                    context=None, feedback=None,
                    output='TEMPORARY_OUTPUT', 
                    ):
@@ -242,7 +242,7 @@ class AggAverage(QgsProcessingAlgorithm):
                               
                               
                               
-    def gdal_calc_1(self, inp, formula, output='TEMPORARY_OUTPUT', **kwargs):
+    def _gdal_calc_1(self, inp, formula, output='TEMPORARY_OUTPUT', **kwargs):
         """run gdal raster calc on a single raster. useful for masking operations"""
  
         return self._gdal_calc({ 
@@ -253,7 +253,7 @@ class AggAverage(QgsProcessingAlgorithm):
             #'INPUT_B' : None, 'INPUT_C' : None, 'INPUT_D' : None, 'INPUT_E' : None, 'INPUT_F' : None, 'EXTRA' : '',  'OPTIONS' : '',
                    }, **kwargs)
                               
-    def gdal_calc_add(self, inpA, inpB, output='TEMPORARY_OUTPUT', **kwargs):
+    def _gdal_calc_add(self, inpA, inpB, output='TEMPORARY_OUTPUT', **kwargs):
         """add two rasters together"""
         
         pars_d = { 
@@ -268,26 +268,36 @@ class AggAverage(QgsProcessingAlgorithm):
                               
     def _gdal_calc(self, pars_d, context=None, feedback=None):
  
-        return processing.run('gdal:rastercalculator', pars_d, context=context, feedback=feedback, is_child_algorithm=True)['OUTPUT']
-    
-    def agg_direct(self, params, dem1, wsh1, wse1, scale, context=None, feedback=None):
+        ofp =  processing.run('gdal:rastercalculator', pars_d, context=context, feedback=feedback, is_child_algorithm=True)['OUTPUT']
         
+        if not os.path.exists(ofp):
+            raise QgsProcessingException('gdal:rastercalculator failed to get a result for \n%s'%pars_d['FORMULA'])
+        
+        return ofp
+        
+        
+    
+    def agg_direct(self, params, dem1, wsh1, wse1, scale, context=None, feedback=None):        
         """WSH Averaging method"""
+        #=======================================================================
+        # defaults
+        #=======================================================================
         cf_kwargs = dict(context=context, feedback=feedback)    
         
         def get_out(attn):
             return self.parameterAsOutputLayer(params, getattr(self, attn), context)
         
- 
+        #=======================================================================
+        # compute DEM and WSh
+        #======================================================================= 
         # simple DEM aggregate
-        dem2_fp = self.agg_simple(dem1, scale,  
-                                  #output=params['OUTPUT_DEM'],
-                                  output=get_out(self.OUTPUT_DEM), #gdal doesn't play well with the params
-                                   **cf_kwargs)
+        dem2_fp = self._agg_simple(dem1, scale,
+                                  # output=params['OUTPUT_DEM'],
+                                  output=get_out(self.OUTPUT_DEM),  # gdal doesn't play well with the params
+                                   ** cf_kwargs)
         
-        
-        #simple WSH aggregate
-        wsh2_fp = self.agg_simple(wsh1, scale, output=get_out(self.OUTPUT_WSH),**cf_kwargs)
+        # simple WSH aggregate
+        wsh2_fp = self._agg_simple(wsh1, scale, output=get_out(self.OUTPUT_WSH), **cf_kwargs)
         
         if feedback.isCanceled():
             return {} 
@@ -300,18 +310,63 @@ class AggAverage(QgsProcessingAlgorithm):
         assert os.path.exists(wsh2_fp)
         
         """throwing processing exception on pytest"""
-        wsh2_maskd_fp = self.gdal_calc_1(wsh2_fp,'A*(A!=0)/(A!=0)', **cf_kwargs)
+        wsh2_maskd_fp = self._gdal_calc_1(wsh2_fp,'A*(A!=0)/(A!=0)', **cf_kwargs)
          
         #DEm + WSH
-        wse2_fp = self.gdal_calc_add(wsh2_maskd_fp, dem2_fp, output=get_out(self.OUTPUT_WSE), **cf_kwargs)
+        wse2_fp = self._gdal_calc_add(wsh2_maskd_fp, dem2_fp, output=get_out(self.OUTPUT_WSE), **cf_kwargs)
          
  
         
         return {self.OUTPUT_DEM:dem2_fp, self.OUTPUT_WSH:wsh2_fp, self.OUTPUT_WSE:wse2_fp}
         
     
-    def agg_filter(self, dem1, wsh1, wse1, scale, context, feedback):
+    def agg_filter(self, params, dem1, wsh1, wse1, scale, context=None, feedback=None):
         """WSE Averaging method"""
+        #=======================================================================
+        # defaults
+        #=======================================================================
+        cf_kwargs = dict(context=context, feedback=feedback)    
+        
+        def get_out(attn):
+            return self.parameterAsOutputLayer(params, getattr(self, attn), context)
+        
+        #=======================================================================
+        # compute DEM and WSE
+        #======================================================================= 
+        # simple DEM aggregate
+        dem2_fp = self._agg_simple(dem1, scale, output=get_out(self.OUTPUT_DEM), **cf_kwargs)        
+        
+        #simple WSH aggregate
+        wse2A_fp = self._agg_simple(wsh1, scale,**cf_kwargs)
+        
+        if feedback.isCanceled():
+            return {} 
+ 
+        
+        #=======================================================================
+        # filter WSE
+        #=======================================================================        
+        wse2_mask_fp = self._gdal_calc({ 
+            'INPUT_A' : dem2_fp, 'BAND_A' : 1, 'INPUT_B' : wse2A_fp, 'BAND_B' : 1, 
+            #'FORMULA':'B/(A<B)', #WSE / (wet=1, dry=0)
+            'FORMULA':'B<A',    #wet=1, dry=0        
+            'NO_DATA' : -9999,  'OUTPUT' :'TEMPORARY_OUTPUT', 'RTYPE' : 5
+            }, **cf_kwargs)
+        
+        wse2_fp = self._gdal_calc({ 
+            'INPUT_A' : wse2_mask_fp, 'BAND_A' : 1, 'INPUT_B' : wse2A_fp, 'BAND_B' : 1, 
+            'FORMULA':'B/A', #WSE / (wet=1, dry=0)         
+            'NO_DATA' : -9999,  'OUTPUT' : get_out(self.OUTPUT_WSE), 'RTYPE' : 5
+            }, **cf_kwargs)
+        
+
+        #=======================================================================
+        # add WSH
+        #=======================================================================
+        wsh2_fp = self._gdal_calc_add(wse2_fp, dem2_fp, output=get_out(self.OUTPUT_WSH), **cf_kwargs)
+        
+        
+        return {self.OUTPUT_DEM:dem2_fp, self.OUTPUT_WSH:wsh2_fp, self.OUTPUT_WSE:wse2_fp}
         
         
     #===========================================================================
