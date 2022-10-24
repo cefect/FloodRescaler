@@ -23,6 +23,7 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingParameterString,
                        QgsRasterLayer ,
                        QgsCoordinateTransformContext,
+                       QgsMapLayerStore
  
                        )
 
@@ -74,7 +75,7 @@ class AggAverage(QgsProcessingAlgorithm):
         Returns the translated algorithm name, which should be used for any
         user-visible display of the algorithm name.
         """
-        return self.tr('Aggregation with Averaging')
+        return self.tr('Aggregation via Averaging')
 
     def group(self):
         """
@@ -237,9 +238,13 @@ class AggAverage(QgsProcessingAlgorithm):
                   'TARGET_RESOLUTION' : scale}
         
         #gives a filepath regardless
-        return processing.run('gdal:warpreproject', pars_d, 
+        ofp =  processing.run('gdal:warpreproject', pars_d, 
                               context=context, feedback=feedback, is_child_algorithm=True)['OUTPUT']
                               
+        if not os.path.exists(ofp):
+            raise QgsProcessingException('gdal:warpreproject failed to get a result for \n%s'%pars_d['INTPUT']) 
+        
+        return ofp 
                               
                               
     def _gdal_calc_1(self, inp, formula, output='TEMPORARY_OUTPUT', **kwargs):
@@ -253,18 +258,7 @@ class AggAverage(QgsProcessingAlgorithm):
             #'INPUT_B' : None, 'INPUT_C' : None, 'INPUT_D' : None, 'INPUT_E' : None, 'INPUT_F' : None, 'EXTRA' : '',  'OPTIONS' : '',
                    }, **kwargs)
                               
-    def _gdal_calc_add(self, inpA, inpB, output='TEMPORARY_OUTPUT', **kwargs):
-        """add two rasters together"""
-        
-        pars_d = { 
-            'INPUT_A' : inpA, 'BAND_A' : 1, 'INPUT_B' : inpB, 'BAND_B' : 1, 
-            'FORMULA':'A+B',            
-            'NO_DATA' : -9999,  'OUTPUT' : output, 'RTYPE' : 5, 
-            #'BAND_B' : None, 'BAND_C' : None, 'BAND_D' : None, 'BAND_E' : None, 'BAND_F' : None, 
-            #'INPUT_B' : None, 'INPUT_C' : None, 'INPUT_D' : None, 'INPUT_E' : None, 'INPUT_F' : None, 'EXTRA' : '',  'OPTIONS' : '',
-                   }
-        
-        return self._gdal_calc(pars_d, **kwargs)
+ 
                               
     def _gdal_calc(self, pars_d, context=None, feedback=None):
  
@@ -290,6 +284,7 @@ class AggAverage(QgsProcessingAlgorithm):
         #=======================================================================
         # compute DEM and WSh
         #======================================================================= 
+        feedback.pushInfo('computing DEM')
         # simple DEM aggregate
         dem2_fp = self._agg_simple(dem1, scale,
                                   # output=params['OUTPUT_DEM'],
@@ -313,7 +308,12 @@ class AggAverage(QgsProcessingAlgorithm):
         wsh2_maskd_fp = self._gdal_calc_1(wsh2_fp,'A*(A!=0)/(A!=0)', **cf_kwargs)
          
         #DEm + WSH
-        wse2_fp = self._gdal_calc_add(wsh2_maskd_fp, dem2_fp, output=get_out(self.OUTPUT_WSE), **cf_kwargs)
+        wse2_fp = self._gdal_calc({ 
+            'INPUT_A' : wsh2_maskd_fp, 'BAND_A' : 1, 'INPUT_B' : dem2_fp, 'BAND_B' : 1, 
+            'FORMULA':'A+B',            
+            'NO_DATA' : -9999,  'OUTPUT' : get_out(self.OUTPUT_WSE), 'RTYPE' : 5, 
+                   }, **cf_kwargs)
+ 
          
  
         
@@ -330,14 +330,19 @@ class AggAverage(QgsProcessingAlgorithm):
         def get_out(attn):
             return self.parameterAsOutputLayer(params, getattr(self, attn), context)
         
+        mstore = QgsMapLayerStore()
+        
         #=======================================================================
         # compute DEM and WSE
         #======================================================================= 
+        
         # simple DEM aggregate
+        feedback.pushInfo('computing DEM')
         dem2_fp = self._agg_simple(dem1, scale, output=get_out(self.OUTPUT_DEM), **cf_kwargs)        
         
         #simple WSH aggregate
-        wse2A_fp = self._agg_simple(wsh1, scale,**cf_kwargs)
+        feedback.pushInfo('computing raw WSE')
+        wse2A_fp = self._agg_simple(wse1, scale,**cf_kwargs)
         
         if feedback.isCanceled():
             return {} 
@@ -345,27 +350,66 @@ class AggAverage(QgsProcessingAlgorithm):
         
         #=======================================================================
         # filter WSE
-        #=======================================================================        
+        #======================================================================= 
+        
+        feedback.pushInfo('filtering WSE')
+        
+        """throwing a permissions error       
         wse2_mask_fp = self._gdal_calc({ 
             'INPUT_A' : dem2_fp, 'BAND_A' : 1, 'INPUT_B' : wse2A_fp, 'BAND_B' : 1, 
             #'FORMULA':'B/(A<B)', #WSE / (wet=1, dry=0)
-            'FORMULA':'B<A',    #wet=1, dry=0        
+            'FORMULA':'B>A',    #wet=1, dry=0        
             'NO_DATA' : -9999,  'OUTPUT' :'TEMPORARY_OUTPUT', 'RTYPE' : 5
-            }, **cf_kwargs)
+            }, **cf_kwargs)"""
         
+        #=======================================================================
+        # build mask
+        #=======================================================================
+        dem2 = QgsRasterLayer(dem2_fp, 'DEM2')
+        mstore.addMapLayer(dem2)
+        
+        wse2A =  QgsRasterLayer(wse2A_fp, 'WSE2a')
+        mstore.addMapLayer(wse2A)
+        
+        with RasterCalc(dem2, feedback=feedback) as rcalc:
+            dem_rc = rcalc.ref_rcentry
+            wse_rc = rcalc.add_rcentry(wse2A)
+ 
+            wse2_mask_fp = rcalc.processCalculation('{wse}>{dem}'.format(wse=wse_rc.ref, dem=dem_rc.ref))
+            
+ 
+        #=======================================================================
+        # apply mask
+        #=======================================================================        
         wse2_fp = self._gdal_calc({ 
-            'INPUT_A' : wse2_mask_fp, 'BAND_A' : 1, 'INPUT_B' : wse2A_fp, 'BAND_B' : 1, 
-            'FORMULA':'B/A', #WSE / (wet=1, dry=0)         
+            'INPUT_A' : wse2A_fp, 'BAND_A' : 1, 'INPUT_B' : wse2_mask_fp, 'BAND_B' : 1, 
+            'FORMULA':'A/B', #WSE / (wet=1, dry=0)         
             'NO_DATA' : -9999,  'OUTPUT' : get_out(self.OUTPUT_WSE), 'RTYPE' : 5
             }, **cf_kwargs)
         
-
-        #=======================================================================
-        # add WSH
-        #=======================================================================
-        wsh2_fp = self._gdal_calc_add(wse2_fp, dem2_fp, output=get_out(self.OUTPUT_WSH), **cf_kwargs)
         
+        if feedback.isCanceled():
+            return {} 
+        #=======================================================================
+        # WSE-DEM = WSH
+        #=======================================================================
+        feedback.pushInfo('computing WSH')  
+        wsh2A_fp = self._gdal_calc({ 
+            'INPUT_A' : wse2_fp, 'BAND_A' : 1, 'INPUT_B' : dem2_fp, 'BAND_B' : 1, 
+            'FORMULA':'A-B',            
+            'NO_DATA' : -9999,  'OUTPUT' :'TEMPORARY_OUTPUT', 'RTYPE' : 5, 
+                   }, **cf_kwargs)
         
+        #fill zeros
+        wsh2_fp = processing.run('native:fillnodata', 
+                       { 'BAND' : 1,'FILL_VALUE' : 0.0,'INPUT' : wsh2A_fp,'OUTPUT' : get_out(self.OUTPUT_WSH)},
+                          is_child_algorithm=True, **cf_kwargs)['OUTPUT']
+        
+        #=======================================================================
+        # wrap
+        #=======================================================================
+        
+        mstore.removeAllMapLayers()
         return {self.OUTPUT_DEM:dem2_fp, self.OUTPUT_WSH:wsh2_fp, self.OUTPUT_WSE:wse2_fp}
         
         
@@ -415,13 +459,17 @@ class RasterCalc(object):
         self.rasterEntries.append(rcentry)
         return rcentry
     
-    def rcalc(self, formula, output,
+    def processCalculation(self, formula, 
+                           output=None,
               ref_lay=None, rasterEntries=None):
         #=======================================================================
         # defaults
         #=======================================================================
         if ref_lay is None: ref_lay = self.ref_lay
         if rasterEntries is None: rasterEntries = self.rasterEntries
+        if output is None: 
+            #couldnt figur eout how to access the processing temp dir
+            output=os.path.join(os.environ['TEMP'], 'processCalculationResult.tif')
         
         assert isinstance(rasterEntries, list)
         #=======================================================================
@@ -433,7 +481,7 @@ class RasterCalc(object):
                 ofp=output,
                 outputExtent=ref_lay.extent(),
                 outputFormat='GTiff',
-                crs=self.qproj.crs(),
+                crs=ref_lay.crs(),
                 nOutputColumns=ref_lay.width(),
                 nOutputRows=ref_lay.height(),
                 crsTrnsf=QgsCoordinateTransformContext(),
@@ -458,13 +506,18 @@ class RasterCalc(object):
         if not result == 0:
             raise QgsProcessingException('formula=%s failed w/ \n    %s' % (formula, rcalc.lastError()))
         
+        if not os.path.exists(output):
+            raise QgsProcessingException(f'failed to get a result w/ \n    {formula}')
+        
         self.feedback.pushInfo(f'finished on {output}')
         
         return output
     
     def __enter__(self, *args, **kwargs):
         return self
-
+    
+    def __exit__(self, *args, **kwargs):
+        return 
 
 def assert_extent_equal(left, right, msg='',): 
     """ extents check"""
