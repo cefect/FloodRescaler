@@ -10,18 +10,18 @@
 *                                                                         *
 ***************************************************************************
 """
-
+from qgis import processing
 from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (QgsProcessing,
                        QgsFeatureSink,
-                       QgsProcessingException,
+                       QgsProcessingException, #still works
                        QgsProcessingAlgorithm,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterFeatureSink)
-from qgis import processing
 
 
-class ExampleProcessingAlgorithm(QgsProcessingAlgorithm):
+
+class WSHAverage(QgsProcessingAlgorithm):
     """
     This is an example algorithm that takes a vector layer and
     creates a new identical one.
