@@ -13,6 +13,9 @@ In the QGIS [Processing Toolbox](https://docs.qgis.org/3.22/en/docs/user_manual/
 
 The algorithms are tested against QGIS 3.22.8.
 
+## Use
+Instructions are provided on the algorithm dialog
+
 ## Example Data
 
 Example data is provided in the [examples](/examples) folder
