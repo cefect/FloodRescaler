@@ -10,7 +10,7 @@
 *                                                                         *
 ***************************************************************************
 """
-import pprint
+import pprint, os
 from qgis import processing
 from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (QgsProcessing,
@@ -118,15 +118,15 @@ class AggAverage(QgsProcessingAlgorithm):
         # raster layers
         #=======================================================================
         self.addParameter(
-            QgsProcessingParameterRasterLayer(self.INPUT_DEM, self.tr('DEM s1 layer'))
+            QgsProcessingParameterRasterLayer(self.INPUT_DEM, self.tr('DEM s1'))
         )
         
         self.addParameter(
-            QgsProcessingParameterRasterLayer(self.INPUT_WSE, self.tr('WSE s1 layer'))
+            QgsProcessingParameterRasterLayer(self.INPUT_WSE, self.tr('WSE s1'))
         )
                 
         self.addParameter(
-            QgsProcessingParameterRasterLayer(self.INPUT_WSH, self.tr('WSH s1 layer'))
+            QgsProcessingParameterRasterLayer(self.INPUT_WSH, self.tr('WSH s1'))
         )
         
         #=======================================================================
@@ -146,15 +146,15 @@ class AggAverage(QgsProcessingAlgorithm):
         #======================================================================= 
         obj = QgsProcessingParameterRasterDestination       
         self.addParameter(
-            obj(self.OUTPUT_DEM, self.tr('DEM s2 layer'))
+            obj(self.OUTPUT_DEM, self.tr('DEM_s2'))
         )
         
         self.addParameter(
-            obj(self.OUTPUT_WSE, self.tr('WSE s2 layer'))
+            obj(self.OUTPUT_WSE, self.tr('WSE_s2'))
         )
                 
         self.addParameter(
-            obj(self.OUTPUT_WSH, self.tr('WSH s2 layer'))
+            obj(self.OUTPUT_WSH, self.tr('WSH_s2'))
         )
 
     def processAlgorithm(self, params, context, feedback):
@@ -200,20 +200,7 @@ class AggAverage(QgsProcessingAlgorithm):
         
         feedback.pushInfo(f'running with \'{mName}\' and scale={scale:.2f}')
         
-        #=======================================================================
-        # output rasters
-        #=======================================================================
-        #=======================================================================
-        # OUTPUT_DEM = 'OUTPUT_DEM'
-        # OUTPUT_WSE = 'OUTPUT_WSE'
-        # OUTPUT_WSH = 'OUTPUT_WSH'
-        # def get_orlay(attn):
-        #     return self.parameterAsOutputLayer(parameters, getattr(self, attn), context)
-        #     
-        # output_dem = get_orlay('OUTPUT_DEM')
-        # output_wsh = get_orlay('OUTPUT_WSH')
-        # output_wse = get_orlay('OUTPUT_WSE')
-        #=======================================================================
+ 
         
         if feedback.isCanceled():
             return {}
@@ -228,38 +215,13 @@ class AggAverage(QgsProcessingAlgorithm):
             res_d = self.agg_filter(*args)
         else:
             raise QgsProcessingException(f'unrecognized method {mName}')
-
-        # To run another Processing algorithm as part of this algorithm, you can use
-        # processing.run(...). Make sure you pass the current context and feedback
-        # to processing.run to ensure that all temporary layer outputs are available
-        # to the executed algorithm, and that the executed algorithm can send feedback
-        # reports to the user (and correctly handle cancellation and progress reports!)
-        #=======================================================================
-        # if False:
-        #     buffered_layer = processing.run("native:buffer", {
-        #         'INPUT': dest_id,
-        #         'DISTANCE': 1.5,
-        #         'SEGMENTS': 5,
-        #         'END_CAP_STYLE': 0,
-        #         'JOIN_STYLE': 0,
-        #         'MITER_LIMIT': 2,
-        #         'DISSOLVE': False,
-        #         'OUTPUT': 'memory:'
-        #     }, context=context, feedback=feedback)['OUTPUT']
-        #=======================================================================
-
-        # Return the results of the algorithm. In this case our only result is
-        # the feature sink which contains the processed features, but some
-        # algorithms may return multiple feature sinks, calculated numeric
-        # statistics, etc. These should all be included in the returned
-        # dictionary, with keys matching the feature corresponding parameter
-        # or output names.
+ 
         return res_d
     
     
     def agg_simple(self, inp, scale, 
                    context=None, feedback=None,
-                   output='TEMPORARY_LAYER', 
+                   output='TEMPORARY_OUTPUT', 
                    ):
         """apply gdal warp"""
         
@@ -278,18 +240,18 @@ class AggAverage(QgsProcessingAlgorithm):
         return processing.run('gdal:warpreproject', pars_d, 
                               context=context, feedback=feedback, is_child_algorithm=True)['OUTPUT']
                               
+                              
+                              
     def gdal_calc_1(self, inp, formula, output='TEMPORARY_OUTPUT', **kwargs):
         """run gdal raster calc on a single raster. useful for masking operations"""
-        
-        pars_d = { 
+ 
+        return self._gdal_calc({ 
             'INPUT_A' : inp, 'BAND_A' : 1, 'FORMULA':formula,  
             #'FORMULA' : '(A!=0)/(A!=0)',           
             'NO_DATA' : -9999,  'OUTPUT' : output, 'RTYPE' : 5, 
             #'BAND_B' : None, 'BAND_C' : None, 'BAND_D' : None, 'BAND_E' : None, 'BAND_F' : None, 
             #'INPUT_B' : None, 'INPUT_C' : None, 'INPUT_D' : None, 'INPUT_E' : None, 'INPUT_F' : None, 'EXTRA' : '',  'OPTIONS' : '',
-                   }
-        
-        return self._gdal_calc(pars_d, **kwargs)
+                   }, **kwargs)
                               
     def gdal_calc_add(self, inpA, inpB, output='TEMPORARY_OUTPUT', **kwargs):
         """add two rasters together"""
@@ -305,27 +267,27 @@ class AggAverage(QgsProcessingAlgorithm):
         return self._gdal_calc(pars_d, **kwargs)
                               
     def _gdal_calc(self, pars_d, context=None, feedback=None):
-        """
-        help(processing.run)
-        help(processing)
-        
-        help(processing.runAndLoadResults)
-        """
-        return processing.run('gdal:rastercalculator', pars_d, 
-                              context=context, feedback=feedback, is_child_algorithm=True)['OUTPUT']
+ 
+        return processing.run('gdal:rastercalculator', pars_d, context=context, feedback=feedback, is_child_algorithm=True)['OUTPUT']
     
     def agg_direct(self, params, dem1, wsh1, wse1, scale, context=None, feedback=None):
+        
         """WSH Averaging method"""
         cf_kwargs = dict(context=context, feedback=feedback)    
+        
+        def get_out(attn):
+            return self.parameterAsOutputLayer(params, getattr(self, attn), context)
         
  
         # simple DEM aggregate
         dem2_fp = self.agg_simple(dem1, scale,  
                                   #output=params['OUTPUT_DEM'],
+                                  output=get_out(self.OUTPUT_DEM), #gdal doesn't play well with the params
                                    **cf_kwargs)
         
+        
         #simple WSH aggregate
-        wsh2_fp = self.agg_simple(wsh1, scale,  output=params['OUTPUT_DEM'], **cf_kwargs)
+        wsh2_fp = self.agg_simple(wsh1, scale, output=get_out(self.OUTPUT_WSH),**cf_kwargs)
         
         if feedback.isCanceled():
             return {} 
@@ -335,22 +297,30 @@ class AggAverage(QgsProcessingAlgorithm):
         #=======================================================================
         feedback.pushInfo('computing WSE')
         #mask out zeros
+        assert os.path.exists(wsh2_fp)
+        
+        """throwing processing exception on pytest"""
         wsh2_maskd_fp = self.gdal_calc_1(wsh2_fp,'A*(A!=0)/(A!=0)', **cf_kwargs)
-        
-        #DEm + WSH
-        wse2_fp = self.gdal_calc_add(wsh2_maskd_fp, dem2_fp, output=params['OUTPUT_WSE'], **cf_kwargs)
          
-        
+        #DEm + WSH
+        wse2_fp = self.gdal_calc_add(wsh2_maskd_fp, dem2_fp, output=get_out(self.OUTPUT_WSE), **cf_kwargs)
+         
+ 
         
         return {self.OUTPUT_DEM:dem2_fp, self.OUTPUT_WSH:wsh2_fp, self.OUTPUT_WSE:wse2_fp}
         
     
     def agg_filter(self, dem1, wsh1, wse1, scale, context, feedback):
-        """WSH Averaging method"""
+        """WSE Averaging method"""
         
         
-    def __enter__(self,*args,**kwargs):
-        return self
+    #===========================================================================
+    # def __enter__(self,*args,**kwargs):
+    #     return self
+    # 
+    # def __exit__(self,  *args,**kwargs):
+    #     pass
+    #===========================================================================
     
 #===============================================================================
 # HELPERS
