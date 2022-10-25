@@ -4,6 +4,8 @@ Created on Oct. 24, 2022
 @author: cefect
 
 pytest processing scripts
+
+TODO: add integration tests and processing provider
 '''
 import pytest, copy, os, gc
 from qgis.core import (
