@@ -1,4 +1,6 @@
-# FloodRescaler
+# Flood Grid Rescaler
+
+[![DOI](https://zenodo.org/badge/547351392.svg)](https://zenodo.org/badge/latestdoi/547351392)
 
 A QGIS Processing script for rescaling flood hazard rasters (water depth, water surface elevation, and DEM).
 
