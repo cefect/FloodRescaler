@@ -4,6 +4,8 @@
 
 A QGIS Processing script for rescaling flood hazard rasters (water depth, water surface elevation, and DEM).
 
+The algorithms are tested against QGIS 3.28.11
+
 ## Installation Instructions
 ### download the scripts
 download the algorithms of interest from the [processing folder](floodrescaler/processing) to your local machine
@@ -13,7 +15,7 @@ In the QGIS [Processing Toolbox](https://docs.qgis.org/3.22/en/docs/user_manual/
 
 ![screen capture](/assets/processingToolbox_screengrab.png)
 
-The algorithms are tested against QGIS 3.22.8.
+
 
 ## Use
 Instructions are provided on the algorithm dialog
@@ -21,3 +23,7 @@ Instructions are provided on the algorithm dialog
 ## Example Data
 
 Example data is provided in the [examples](/examples) folder
+
+## Development
+
+create a virtual environment from the supported QGIS version and the `./requirements.txt` file. 
