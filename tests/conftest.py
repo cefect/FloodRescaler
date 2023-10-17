@@ -6,9 +6,12 @@ Created on Oct. 24, 2022
 import os, pathlib, pytest, logging, sys
 from pytest_qgis.utils import clean_qgis_layer
 from qgis.core import (
-    QgsRasterLayer, QgsProject, QgsProcessingFeedback, QgsProcessingContext
+    QgsRasterLayer, QgsProject, QgsProcessingFeedback, QgsProcessingContext, Qgis
     )
 from definitions import src_dir
+
+ 
+print(u'QGIS version: %s, release: %s'%(Qgis.QGIS_VERSION.encode('utf-8'), Qgis.QGIS_RELEASE_NAME.encode('utf-8')))
 
  
 test_data_dir = os.path.join(src_dir, 'examples')
