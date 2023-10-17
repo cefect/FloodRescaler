@@ -354,7 +354,7 @@ class AggAverage(QgsProcessingAlgorithm):
         
         feedback.pushInfo('filtering WSE')
         
-        """throwing a permissions error       
+        """throwing a permissions error (should work with spaces)      
         wse2_mask_fp = self._gdal_calc({ 
             'INPUT_A' : dem2_fp, 'BAND_A' : 1, 'INPUT_B' : wse2A_fp, 'BAND_B' : 1, 
             #'FORMULA':'B/(A<B)', #WSE / (wet=1, dry=0)

@@ -30,8 +30,7 @@ from qgis.core import (QgsProcessing,
 from qgis.analysis import QgsNativeAlgorithms, QgsRasterCalculatorEntry, QgsRasterCalculator
  
 class Dscale(QgsProcessingAlgorithm):
-    """
-    Downscaling port to QGIS processing script
+    """Downscaling port to QGIS processing script
         from  L:\09_REPOS\03_TOOLS\FloodDownscaler\fdsc\control.py
     """
 
@@ -114,9 +113,9 @@ class Dscale(QgsProcessingAlgorithm):
         # control
         #=======================================================================
         self.methods_d = {            
-            #'CostGrow':self.run_cg, 
+            'CostGrow':self.run_CostGrow, 
             'Resample':self.run_Resample, 
-            #'TerrainFilter':self.run_tf, 
+            'TerrainFilter':self.run_TerrainFilter, 
             #'Schumann14':self.run_s14
             }
 
@@ -210,7 +209,7 @@ class Dscale(QgsProcessingAlgorithm):
                                **params)
     
     def run_dscale(self,   dem1_rlay,wse2_rlay, method,
-                   feedback=None,**kwargs):
+                   feedback=None,context=None,**kwargs):
         """main runner for downscaling using specified method
         
         made separate function for easy testing
@@ -239,8 +238,9 @@ class Dscale(QgsProcessingAlgorithm):
         # defaults
         #=======================================================================
         start = now()
-        
-        
+        self.feedback=feedback
+        self.context=context
+        self.proc_kwargs = dict(feedback=feedback, context=context, is_child_algorithm=True)
         #=======================================================================
         # precheck
         #=======================================================================
@@ -251,50 +251,99 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         # get downscaling ratio
         #=======================================================================
-        downscale = get_resolution_ratio(dem1_rlay, wse2_rlay)
+        self.downscale = get_resolution_ratio(dem1_rlay, wse2_rlay)
         
-        feedback.pushInfo(f'started w/ \'{method}\' and downscale={downscale:.2f}')
+        feedback.pushInfo(f'started w/ \'{method}\' and downscale={self.downscale:.2f}')
         
         #=======================================================================
         # executre
         #=======================================================================
-        return self.methods_d[method](dem1_rlay,wse2_rlay, downscale, feedback=feedback, **kwargs)
+        return self.methods_d[method](dem1_rlay,wse2_rlay, **kwargs)
         
         
-    def run_Resample(self,
-               _,wse2_rlay,downscale,
-               feedback=None, context=None,
-               OUTPUT_WSE='TEMPORARY_OUTPUT',
-               RESAMPLING=1, 
-               **kwargs):
-        """simple Resamlper"""
+
+
+
+    def run_Resample(self,_,wse2_rlay,downscale=None,**kwargs):
+        """simple Resamlper. wrapper around gdal_warp        
         
-        target_res = rlay_get_resolution(wse2_rlay)/downscale
+        """
+        if downscale is None: downscale=self.downscale
+                
+        ofp = self._gdal_warp(wse2_rlay, downscale, **kwargs)        
+        return {self.OUTPUT_WSE:ofp}
+    
+    def run_TerrainFilter(self, dem, wse, downscale=None, 
+                          OUTPUT_WSE='TEMPORARY_OUTPUT',
+                           **kwargs):
+        """resampler with terrain filter"""
+         
+        if downscale is None: downscale=self.downscale
+        feedback=self.feedback
+        #=======================================================================
+        # resample 
+        #======================================================================= 
+        feedback.pushInfo(f'resample w/ downscale={downscale:.2f}')       
+        wse2_fp = self._gdal_warp(wse, downscale) 
         
-        feedback.pushInfo(f'gdalwarp on {wse2_rlay}')
-        pars_d = { 'DATA_TYPE' : 0, 'EXTRA' : '', 
-                  'INPUT' : wse2_rlay, 
-                  'OUTPUT' : OUTPUT_WSE,  
-                  'MULTITHREADING' : False, 
-                  'NODATA' : -9999, 
-                  'OPTIONS' : '',                  
-                  'RESAMPLING' : RESAMPLING,  #bilinear
-                  'SOURCE_CRS' : None, 
-                  'TARGET_CRS' : None, 'TARGET_EXTENT' : None, 'TARGET_EXTENT_CRS' : None, 
-                  'TARGET_RESOLUTION' : target_res}
+        if feedback.isCanceled():
+            return {} 
+        #=======================================================================
+        # filter
+        #=======================================================================
+        feedback.pushInfo('running filter against dem')  
+        ofp =self._gdal_calc({ 
+            'FORMULA':'A*(A > B)',  
+            'INPUT_A' :wse2_fp, 'BAND_A' : 1, 
+            'INPUT_B':dem, 'BAND_B':1,
+            #'FORMULA' : '(A!=0)/(A!=0)',           
+            'NO_DATA' : 0.0,  
+            'OUTPUT' : OUTPUT_WSE, 'RTYPE' : 5,          
+                   })
+        
+        #=======================================================================
+        # warp
+        #=======================================================================
+        return {self.OUTPUT_WSE:ofp}
+        
+        
+        
+    def run_CostGrow(self):
+        """costGrow"""
+        
+    def _gdal_warp(self, wse2_rlay, downscale, OUTPUT_WSE='TEMPORARY_OUTPUT', RESAMPLING=1, **kwargs):
+        """convenience for gdal warp
+        
+        
+        not sure how to set the layer name"""
+        
+        target_res = rlay_get_resolution(wse2_rlay) / downscale
+        #feedback.pushInfo(f'gdalwarp on {wse2_rlay}')
+        pars_d = {'DATA_TYPE':0, 'EXTRA':'', 
+            'INPUT':wse2_rlay, 
+            'OUTPUT':OUTPUT_WSE, 
+            'MULTITHREADING':False, 
+            'NODATA':-9999, 
+            'OPTIONS':'', 
+            'RESAMPLING':RESAMPLING, #bilinear
+            'SOURCE_CRS':None, 
+            'TARGET_CRS':None, 'TARGET_EXTENT':None, 'TARGET_EXTENT_CRS':None, 
+            'TARGET_RESOLUTION':target_res}
         
         #gives a filepath regardless
-        ofp =  processing.run('gdal:warpreproject', pars_d, 
-                              context=context, feedback=feedback, is_child_algorithm=True)['OUTPUT']
-                              
+        ofp = processing.run('gdal:warpreproject', pars_d,  **self.proc_kwargs)['OUTPUT']
         if not os.path.exists(ofp):
-            raise QgsProcessingException('gdal:warpreproject failed to get a result for \n%s'%pars_d['INTPUT'])
+            raise QgsProcessingException('gdal:warpreproject failed to get a result for \n%s' % pars_d['INTPUT'])
+        return ofp
+    
+    def _gdal_calc(self, pars_d):
+ 
+        ofp =  processing.run('gdal:rastercalculator', pars_d, **self.proc_kwargs)['OUTPUT']
         
-        return {self.OUTPUT_WSE:ofp} 
+        if not os.path.exists(ofp):
+            raise QgsProcessingException('gdal:rastercalculator failed to get a result for \n%s'%pars_d['FORMULA'])
         
-        
-        
-        
+        return ofp
         
  
 
