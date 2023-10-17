@@ -273,6 +273,17 @@ class Dscale(QgsProcessingAlgorithm):
         ofp = self._gdal_warp(wse2_rlay, downscale, **kwargs)        
         return {self.OUTPUT_WSE:ofp}
     
+
+    def _dem_filter(self, dem, wse2_fp, OUTPUT='TEMPORARY_OUTPUT'):
+ 
+        return self._gdal_calc({
+                'FORMULA':'A*(A > B)', 
+                'INPUT_A':wse2_fp, 'BAND_A':1, 
+                'INPUT_B':dem, 'BAND_B':1, 
+                #'FORMULA' : '(A!=0)/(A!=0)',
+                'NO_DATA':0.0, 
+                'OUTPUT':OUTPUT, 'RTYPE':5})
+
     def run_TerrainFilter(self, dem, wse, downscale=None, 
                           OUTPUT_WSE='TEMPORARY_OUTPUT',
                            **kwargs):
@@ -292,14 +303,7 @@ class Dscale(QgsProcessingAlgorithm):
         # filter
         #=======================================================================
         feedback.pushInfo('running filter against dem')  
-        ofp =self._gdal_calc({ 
-            'FORMULA':'A*(A > B)',  
-            'INPUT_A' :wse2_fp, 'BAND_A' : 1, 
-            'INPUT_B':dem, 'BAND_B':1,
-            #'FORMULA' : '(A!=0)/(A!=0)',           
-            'NO_DATA' : 0.0,  
-            'OUTPUT' : OUTPUT_WSE, 'RTYPE' : 5,          
-                   })
+        ofp = self._dem_filter(dem, wse2_fp, OUTPUT=OUTPUT_WSE)
         
         #=======================================================================
         # warp
@@ -308,8 +312,42 @@ class Dscale(QgsProcessingAlgorithm):
         
         
         
-    def run_CostGrow(self):
+    def run_CostGrow(self, dem, wse,
+                     OUTPUT_WSE='TEMPORARY_OUTPUT',**kwargs):
         """costGrow"""
+        
+        downscale=self.downscale
+        feedback=self.feedback
+        
+        #=======================================================================
+        # resample 
+        #======================================================================= 
+        feedback.pushInfo(f'resample w/ downscale={downscale:.2f}')       
+        wse2_fp = self._gdal_warp(wse, downscale) 
+        
+        if feedback.isCanceled():
+            return {} 
+        #=======================================================================
+        # filter
+        #=======================================================================
+        feedback.pushInfo('running filter against dem')  
+        wse3_fp = self._dem_filter(dem, wse2_fp)
+        
+        #=======================================================================
+        # costDistanceGrow_wbt
+        #=======================================================================
+        
+        #=======================================================================
+        # isolated filter
+        #=======================================================================
+        
+        
+        
+        #=======================================================================
+        # warp
+        #=======================================================================
+        return {self.OUTPUT_WSE:ofp}
+        
         
     def _gdal_warp(self, wse2_rlay, downscale, OUTPUT_WSE='TEMPORARY_OUTPUT', RESAMPLING=1, **kwargs):
         """convenience for gdal warp

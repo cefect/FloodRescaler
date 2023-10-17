@@ -28,9 +28,9 @@ def output_params(qproj):
 @pytest.mark.dev  
 @pytest.mark.parametrize('caseName',['Ahr2021'])
 @pytest.mark.parametrize('method',[
-    #'CostGrow',
-    'TerrainFilter',
-    'Resample',
+    'CostGrow',
+    #'TerrainFilter',
+    #'Resample',
     ])
 def test_runner(dem,wse,   method, output_params, context, feedback):
     """test the main runner""" 

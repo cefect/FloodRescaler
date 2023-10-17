@@ -2,7 +2,8 @@
 
 [![DOI](https://zenodo.org/badge/547351392.svg)](https://zenodo.org/badge/latestdoi/547351392)
 
-A QGIS Processing script for rescaling flood hazard rasters (water depth, water surface elevation, and DEM).
+A QGIS Processing script for rescaling flood hazard rasters (water depth, water surface elevation, and DEM) that includes the following tools:
+- Aggregation via Averaging: Two methods for coarsening flood hazard grids described in [Bryant et. al., (2022)]
 
 The algorithms are tested against QGIS 3.28.11
 
