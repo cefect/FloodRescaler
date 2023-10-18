@@ -168,6 +168,9 @@ class Dscale(QgsProcessingAlgorithm):
         # defaults
         #=======================================================================
         feedback.pushInfo('starting w/ \n%s'%(pprint.pformat(params, width=30)))
+        
+        self._init_algo(params, context, feedback)
+        
         #=======================================================================
         # retrieve inputs---
         #=======================================================================
@@ -205,11 +208,23 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================.
  
  
-        return self.run_dscale(input_dem, input_wse, mName, context=context, feedback=feedback,
+        return self.run_dscale(input_dem, input_wse, mName, 
+                               #context=context, feedback=feedback,
                                **params)
+        
+    def _init_algo(self, params, context, feedback):
+        """common init for tests"""
+        self.proc_kwargs = dict(feedback=feedback, context=context, is_child_algorithm=True)
+        self.context, self.feedback, self.params = context, feedback, params
+        
+        
+    def _get_out(self, attn):
+        return self.parameterAsOutputLayer(self.params, getattr(self, attn), self.context)
+        
+        
     
     def run_dscale(self,   dem1_rlay,wse2_rlay, method,
-                   feedback=None,context=None,**kwargs):
+                   **kwargs):
         """main runner for downscaling using specified method
         
         made separate function for easy testing
@@ -238,9 +253,9 @@ class Dscale(QgsProcessingAlgorithm):
         # defaults
         #=======================================================================
         start = now()
-        self.feedback=feedback
-        self.context=context
-        self.proc_kwargs = dict(feedback=feedback, context=context, is_child_algorithm=True)
+        feedback=self.feedback
+        context=self.context
+        
         #=======================================================================
         # precheck
         #=======================================================================
@@ -269,8 +284,10 @@ class Dscale(QgsProcessingAlgorithm):
         
         """
         if downscale is None: downscale=self.downscale
+        
+
                 
-        ofp = self._gdal_warp(wse2_rlay, downscale, **kwargs)        
+        ofp = self._gdal_warp(wse2_rlay, downscale, OUTPUT=self._get_out(self.OUTPUT_WSE), **kwargs)        
         return {self.OUTPUT_WSE:ofp}
     
 
@@ -285,7 +302,7 @@ class Dscale(QgsProcessingAlgorithm):
                 'OUTPUT':OUTPUT, 'RTYPE':5})
 
     def run_TerrainFilter(self, dem, wse, downscale=None, 
-                          OUTPUT_WSE='TEMPORARY_OUTPUT',
+ 
                            **kwargs):
         """resampler with terrain filter"""
          
@@ -303,7 +320,7 @@ class Dscale(QgsProcessingAlgorithm):
         # filter
         #=======================================================================
         feedback.pushInfo('running filter against dem')  
-        ofp = self._dem_filter(dem, wse2_fp, OUTPUT=OUTPUT_WSE)
+        ofp = self._dem_filter(dem, wse2_fp, OUTPUT=self._get_out(self.OUTPUT_WSE))
         
         #=======================================================================
         # warp
@@ -336,7 +353,7 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         # costDistanceGrow_wbt
         #=======================================================================
-        
+        wse4_fp = self._costdistance(wse3_fp)
         #=======================================================================
         # isolated filter
         #=======================================================================
@@ -346,10 +363,23 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         # warp
         #=======================================================================
-        return {self.OUTPUT_WSE:ofp}
+        #return {self.OUTPUT_WSE:ofp}
+    
+    def _costdistance(self, wse_fp, **kwargs):
+        """cost grow/allocation using WBT"""
+        feedback=self.feedback
+        context=self.context
+        feedback.pushInfo(f'costDistance + costAllocation on {wse_fp}')
+        
+        #=======================================================================
+        # costDistance
+        #=======================================================================
+        #fillnodata in wse (for source)
+        processing.run('wbt:ConvertNodataToZero', { 'input' : wse_fp, 'output' : 'TEMPORARY_OUTPUT' }, **self.proc_kwargs)
         
         
-    def _gdal_warp(self, wse2_rlay, downscale, OUTPUT_WSE='TEMPORARY_OUTPUT', RESAMPLING=1, **kwargs):
+        
+    def _gdal_warp(self, wse2_rlay, downscale, OUTPUT='TEMPORARY_OUTPUT', RESAMPLING=1, **kwargs):
         """convenience for gdal warp
         
         
@@ -359,7 +389,7 @@ class Dscale(QgsProcessingAlgorithm):
         #feedback.pushInfo(f'gdalwarp on {wse2_rlay}')
         pars_d = {'DATA_TYPE':0, 'EXTRA':'', 
             'INPUT':wse2_rlay, 
-            'OUTPUT':OUTPUT_WSE, 
+            'OUTPUT':OUTPUT, 
             'MULTITHREADING':False, 
             'NODATA':-9999, 
             'OPTIONS':'', 
