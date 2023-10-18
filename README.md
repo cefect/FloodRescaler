@@ -57,6 +57,18 @@ If you use these tools for your work, please cite the following:
 	author = {Bryant, Seth and Guy, Schumann and Heiko, Apel and Heidi, Kreibich and Bruno, Merz},
 	year = {2023},
 }
+
+
+@inproceedings{lindsay_whitebox_2014,
+	title = {The whitebox geospatial analysis tools project and open-access {GIS}},
+	url = {https://jblindsay.github.io/ghrg/pubs/LindsayGISRUK2014.pdf},
+	urldate = {2022-04-11},
+	booktitle = {Proceedings of the {GIS} {Research} {UK} 22nd {Annual} {Conference}, {The} {University} of {Glasgow}},
+	author = {Lindsay, JB},
+	year = {2014},
+	pages = {16--18},
+}
+
 ```
 
 ## 5 Development
