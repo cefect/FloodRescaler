@@ -101,8 +101,10 @@ class AggAverage(QgsProcessingAlgorithm):
         parameters and outputs associated with it..
         """
         return self.tr(
-            """Aggregating (upscalig) flood layers with methods described in Bryant et. al., (2022). Two methods are provided, both use simple averaging to compute the DEM grid.
-             \'WSH Averaging\': usees the WSH (water depths) grid as the primary layer, which is aggregated through simple averaging, while the WSE grid is computed via addition with the DEM grid.
+            """Aggregating (coarsening) flood hazard layers with methods described in Bryant et. al., (2023) [10.1029/2023WR035100]. 
+            Two methods are provided, both use simple averaging to compute the DEM grid.
+             \'WSH Averaging\': uses the WSH (water depths) grid as the primary layer, which is aggregated through simple averaging, 
+             while the WSE grid is computed via addition with the DEM grid.
              \'WSE Averaging\' first aggregates the WSE grid, before filtering against the DEM, then subtracting to compute the WSH grid.            
             """)
 
@@ -354,7 +356,7 @@ class AggAverage(QgsProcessingAlgorithm):
         
         feedback.pushInfo('filtering WSE')
         
-        """throwing a permissions error       
+        """throwing a permissions error (should work with spaces)      
         wse2_mask_fp = self._gdal_calc({ 
             'INPUT_A' : dem2_fp, 'BAND_A' : 1, 'INPUT_B' : wse2A_fp, 'BAND_B' : 1, 
             #'FORMULA':'B/(A<B)', #WSE / (wet=1, dry=0)
