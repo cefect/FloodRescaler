@@ -8,11 +8,13 @@ Created on Oct. 17, 2023
 import pytest, copy, os, gc
 from qgis.core import (
     QgsRasterLayer, QgsProject,
-    QgsProcessingOutputLayerDefinition
+    QgsProcessingOutputLayerDefinition, QgsApplication
     )
 
-
+from definitions import wbt_exe
 from floodrescaler.processing.dscale import Dscale
+
+
 
 
 @pytest.fixture(scope='function')
@@ -25,24 +27,43 @@ def output_params(qproj):
         'OUTPUT_WSE':get_out()
         }
     
-@pytest.mark.dev  
+
+@pytest.mark.dev 
 @pytest.mark.parametrize('caseName',['Ahr2021'])
 @pytest.mark.parametrize('method',[
-    'CostGrow',
-    #'TerrainFilter',
-    #'Resample',
+    'Resample',
+    'TerrainFilter',
+    'CostGrow',    
     ])
-def test_runner(dem,wse,   method, output_params, context, feedback):
+def test_runner(dem,wse,   method, output_params, context, feedback, wbt_init):
     """test the main runner""" 
     assert isinstance(dem, QgsRasterLayer)
     
     #execute
     algo=Dscale()
     algo.initAlgorithm()
-    res_d = algo.run_dscale( dem, wse, method,context=context, feedback=feedback, **output_params)
+    algo._init_algo(output_params, context, feedback)
+    res_d = algo.run_dscale( dem, wse, method)
     
     #validate
     assert isinstance(res_d, dict)
     assert set(res_d.keys()).symmetric_difference(output_params.keys())==set()
     
+    #todo: add quantiative validation
     
+
+
+  
+@pytest.mark.parametrize('caseName',['Ahr2021'])
+def test_costdistance(wse_fp,  context, feedback, wbt_init):
+    """test the main runner""" 
+ 
+    #setup
+    algo =  Dscale()
+    algo.initAlgorithm()
+    algo._init_algo({}, context, feedback) 
+    
+
+    
+    #execute    
+    algo._costdistance(wse_fp )

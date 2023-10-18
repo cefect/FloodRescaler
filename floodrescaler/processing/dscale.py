@@ -10,7 +10,7 @@
 *                                                                         *
 ***************************************************************************
 """
-import pprint, os, datetime
+import pprint, os, datetime, tempfile
 from qgis import processing
 from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (QgsProcessing,
@@ -23,11 +23,15 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingParameterString,
                        QgsRasterLayer ,
                        QgsCoordinateTransformContext,
-                       QgsMapLayerStore
+                       QgsMapLayerStore,
+                       QgsProcessingOutputLayerDefinition,
+                       QgsProject
  
                        )
 
 from qgis.analysis import QgsNativeAlgorithms, QgsRasterCalculatorEntry, QgsRasterCalculator
+
+import pandas as pd
  
 class Dscale(QgsProcessingAlgorithm):
     """Downscaling port to QGIS processing script
@@ -100,7 +104,14 @@ class Dscale(QgsProcessingAlgorithm):
         parameters and outputs associated with it..
         """
         return self.tr(
-            """Downscaling  
+            """Downscaling coarse WSE to a finer resolution with methods described in Bryant et. al., (2023) [10.5194/hess-2023-156] which apply simple hydraulic assumptions and a fine resolution DEM.
+            Three methods are provided with varying treatment of the three resample cases (wet-wet (WW), wet-partial (WP), and dry-partial (DP)):
+            \'Resample\': [WW] simple bilinear resampling (e.g., gdal_warp)
+            \'TerrainFilter\': [WW+WP]: bilinear resampling followed by a terrain filter
+            \'CostGrow\': [WW+WP+DP]: as in \'TerrainFilter\' followed by a cost distance routine to grow the inundation and an isolated flooding filter. 
+            
+        
+        \'CostGrow\' requires the \'WhiteboxTools for QGIS\' plugin to be installed and configured (https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html)
             """)
 
     def initAlgorithm(self, config=None):
@@ -329,8 +340,7 @@ class Dscale(QgsProcessingAlgorithm):
         
         
         
-    def run_CostGrow(self, dem, wse,
-                     OUTPUT_WSE='TEMPORARY_OUTPUT',**kwargs):
+    def run_CostGrow(self, dem, wse, **kwargs):
         """costGrow"""
         
         downscale=self.downscale
@@ -354,16 +364,66 @@ class Dscale(QgsProcessingAlgorithm):
         # costDistanceGrow_wbt
         #=======================================================================
         wse4_fp = self._costdistance(wse3_fp)
+        
+        #=======================================================================
+        # DEM filter again
+        #=======================================================================
+        wse5_fp = self._dem_filter(dem, wse4_fp)
+        
         #=======================================================================
         # isolated filter
         #=======================================================================
-        
+        ofp= self._filter_isolated(wse5_fp, OUTPUT=self._get_out(self.OUTPUT_WSE))
         
         
         #=======================================================================
         # warp
         #=======================================================================
-        #return {self.OUTPUT_WSE:ofp}
+        return {self.OUTPUT_WSE:ofp}
+        
+    def _filter_isolated(self, wse_fp, OUTPUT='TEMPORARY_OUTPUT', **kwargs):
+        """remove isolated cells from grid using WBT"""
+        feedback=self.feedback
+        #=======================================================================
+        # #convert to mask
+        #=======================================================================
+        """wbt.clump needs 1s and 0=dry"""
+        mask1_fp = self._gdal_calc_mask(wse_fp) 
+        
+        mask2_fp = processing.run('native:fillnodata', 
+                                  { 'BAND' : 1, 'FILL_VALUE' : 0, 'INPUT' : mask1_fp, 'OUTPUT' : 'TEMPORARY_OUTPUT' }, 
+                                  **self.proc_kwargs)['OUTPUT']
+        
+        #=======================================================================
+        # clump
+        #=======================================================================
+        clump_fp = processing.run('wbt:Clump', 
+                      { 'diag' : False, 'input' : mask2_fp, 'output' : tfp(), 'zero_back' : True }, 
+                                  **self.proc_kwargs)['output']
+
+        #identify main clump        
+        unique_fp = processing.run('native:rasterlayeruniquevaluesreport', 
+                      { 'BAND' : 1, 'INPUT' : clump_fp, 
+                       #'OUTPUT_HTML_FILE' : 'TEMPORARY_OUTPUT',
+                        'OUTPUT_TABLE' : tfp(suffix='.csv') }, **self.proc_kwargs)['OUTPUT_TABLE']
+                        
+        ser = pd.read_csv(unique_fp).sort_values('count', ascending=False).iloc[1, :]#take second row
+        assert ser['count']>0
+        max_clump_id = ser['value']
+        
+        feedback.pushInfo(f'identified largest clump {max_clump_id}\n{ser.to_dict()}')
+        
+        #build mask of this (1= main clump, 0=not)
+        clump_mask_fp = self._gdal_calc({'FORMULA':f'A=={int(max_clump_id)}', 'INPUT_A':clump_fp, 'BAND_A':1,'NO_DATA':0,'RTYPE':5, 'OUTPUT':'TEMPORARY_OUTPUT'})
+        
+        #apply clump filter
+        return self._gdal_calc({'FORMULA':f'A/B', 
+                                'INPUT_A':wse_fp, 'BAND_A':1,
+                                'INPUT_B':clump_mask_fp, 'BAND_B':1,
+                                'NO_DATA':0,'RTYPE':5, 'OUTPUT':OUTPUT})
+        
+        
+        
     
     def _costdistance(self, wse_fp, **kwargs):
         """cost grow/allocation using WBT"""
@@ -374,10 +434,42 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         # costDistance
         #=======================================================================
+        
+        #temp_out = QgsProcessingOutputLayerDefinition(sink='TEMPORARY_OUTPUT')
+        #temp_out = QgsProcessing.TEMPORARY_OUTPUT
+        #temp_out='TEMPORARY_OUTPUT'
+        #temp_out = tempfile.NamedTemporaryFile(suffix='.tif').name
+        """
+        couldnt get the neative temp files to work
+ 
+        """
         #fillnodata in wse (for source)
-        processing.run('wbt:ConvertNodataToZero', { 'input' : wse_fp, 'output' : 'TEMPORARY_OUTPUT' }, **self.proc_kwargs)
+        wse1_fp = processing.run('wbt:ConvertNodataToZero', { 'input' : wse_fp, 'output' : tfp()}, **self.proc_kwargs)['output']
         
+        #build cost friction (constant)
+        cost_fric_fp = processing.run('wbt:NewRasterFromBase',
+                                      { 'base' : wse1_fp,  'data_type' : 1, 'output' : tfp(), 'value' : 1.0}, 
+                                      **self.proc_kwargs)['output']
         
+        #compute backlink raster
+        backlink_fp = processing.run('wbt:CostDistance',
+                                      { 'cost' : cost_fric_fp, 'out_accum' : tfp(), 'out_backlink' : tfp(), 'source' : wse1_fp },
+                                      **self.proc_kwargs)['out_backlink']
+        
+        feedback.pushInfo(f'built costDistance backlink raster \n    {backlink_fp}')
+        
+        #=======================================================================
+        # costAllocation
+        #=======================================================================
+        costAlloc_fp = processing.run('wbt:CostAllocation',
+                                      { 'backlink' : backlink_fp, 'output' : tfp(), 'source' : wse1_fp},
+                                      **self.proc_kwargs)['output']
+                                      
+        feedback.pushInfo(f'built CostAllocation \n    {costAlloc_fp}')
+        
+        return costAlloc_fp
+        
+         
         
     def _gdal_warp(self, wse2_rlay, downscale, OUTPUT='TEMPORARY_OUTPUT', RESAMPLING=1, **kwargs):
         """convenience for gdal warp
@@ -405,6 +497,15 @@ class Dscale(QgsProcessingAlgorithm):
         return ofp
     
     def _gdal_calc(self, pars_d):
+        """Raster calculator (gdal:rastercalculator)
+        - 0: Byte
+        - 1: Int16
+        - 2: UInt16
+        - 3: UInt32
+        - 4: Int32
+        - 5: Float32
+        - 6: Float64
+        """
  
         ofp =  processing.run('gdal:rastercalculator', pars_d, **self.proc_kwargs)['OUTPUT']
         
@@ -412,6 +513,10 @@ class Dscale(QgsProcessingAlgorithm):
             raise QgsProcessingException('gdal:rastercalculator failed to get a result for \n%s'%pars_d['FORMULA'])
         
         return ofp
+    
+    
+    def _gdal_calc_mask(self, rlay, OUTPUT='TEMPORARY_OUTPUT'):
+        return self._gdal_calc({'FORMULA':'A/A', 'INPUT_A':rlay, 'BAND_A':1,'NO_DATA':-9999,'OUTPUT':OUTPUT, 'RTYPE':5})
         
  
 
@@ -425,6 +530,9 @@ class Dscale(QgsProcessingAlgorithm):
         
 def now():
     return datetime.datetime.now()
+
+def tfp(suffix='.tif'):
+    return tempfile.NamedTemporaryFile(suffix=suffix).name
 
 def get_resolution_ratio( 
                              rlay_s1, #fine

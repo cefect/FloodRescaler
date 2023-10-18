@@ -140,3 +140,5 @@ dmypy.json
 
 #Windows shortcuts
 *.lnk
+tests/settings.json
+definitions.py
