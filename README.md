@@ -35,38 +35,29 @@ If you use these tools for your work, please cite the following:
 
 ### Aggregation via Averaging
 
-
+```
 @article{bryant_bias_2023,
 	title = {Bias in {Flood} {Hazard} {Grid} {Aggregation}},
-	volume = {59},
-	copyright = {© 2023. The Authors.},
-	issn = {1944-7973},
 	url = {https://onlinelibrary.wiley.com/doi/abs/10.1029/2023WR035100},
-	doi = {10.1029/2023WR035100},
- 
-	language = {en},
-	number = {9},
-	urldate = {2023-09-23},
+	doi = {10.1029/2023WR035100}, 
 	journal = {Water Resources Research},
 	author = {Bryant, Seth and Kreibich, Heidi and Merz, Bruno},
 	year = {2023},
-	note = {\_eprint: https://onlinelibrary.wiley.com/doi/pdf/10.1029/2023WR035100},
-	pages = {e2023WR035100},
- 
 }
+```
 
 
 ### Downscaling
 
+```
 @article{bryant_resolution_2023,
 	title = {Resolution {Enhancement} of {Flood} {Inundation} {Grids} [in review]},
 	doi = {10.5194/hess-2023-156},
-	language = {en},
 	journal = {Hydrology and Earth System Sciences},
 	author = {Bryant, Seth and Guy, Schumann and Heiko, Apel and Heidi, Kreibich and Bruno, Merz},
 	year = {2023},
 }
-
+```
 
 ## 5 Development
 
