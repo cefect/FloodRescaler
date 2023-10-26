@@ -2,9 +2,10 @@
 
 [![DOI](https://zenodo.org/badge/547351392.svg)](https://zenodo.org/badge/latestdoi/547351392)
 
-A QGIS Processing script for rescaling flood hazard rasters (water depth, water surface elevation (WSE), and DEM) that includes the following tools:
-- Aggregation via Averaging: Two methods for coarsening flood hazard grids described in [Bryant et. al., (2022)]
-- Downscaling: Three methods for interpolating a high resolution WSE grid using a high resolution DEM and simple hydraulic assumptions.
+QGIS Processing scripts for rescaling flood hazard rasters that includes the following tools:
+- Resolution enhancement (i.e., Downscaling): Three methods for interpolating a high resolution WSE grid using a high resolution DEM and simple hydraulic assumptions described in [Bryant et. al., (2022)](https://hess.copernicus.org/preprints/hess-2023-156/).
+- Aggregation via Averaging: Two methods for coarsening flood hazard grids described in [Bryant et. al., (2022)](https://doi.org/10.1029/2023WR035100)
+
 
 The algorithms are tested against QGIS 3.28.11 and require [WhiteboxTools for QGIS plugin](https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html).
 
