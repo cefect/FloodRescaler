@@ -10,7 +10,7 @@
 *                                                                         *
 ***************************************************************************
 """
-import pprint, os
+import pprint, os, warnings
 from qgis import processing
 from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (QgsProcessing,
@@ -554,7 +554,7 @@ def assert_rlay_simple(rlay, msg='',):
     y = rlay.rasterUnitsPerPixelY()
     
     if not x==y:
-        raise QgsProcessingException('non-square pixels\n' + msg)
+        raise warnings.warn('non-square pixels\n' + msg)
  
     if not round(x, 10)==int(x):
-        raise QgsProcessingException('non-integer pixel size\n' + msg)
+        raise warnings.warn('non-integer pixel size\n' + msg)
