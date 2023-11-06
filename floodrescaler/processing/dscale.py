@@ -493,7 +493,7 @@ class Dscale(QgsProcessingAlgorithm):
         #gives a filepath regardless
         ofp = processing.run('gdal:warpreproject', pars_d,  **self.proc_kwargs)['OUTPUT']
         if not os.path.exists(ofp):
-            raise QgsProcessingException('gdal:warpreproject failed to get a result for \n%s' % pars_d['INTPUT'])
+            raise QgsProcessingException('gdal:warpreproject failed to get a result for \n%s' % pars_d['INPUT'])
         return ofp
     
     def _gdal_calc(self, pars_d):

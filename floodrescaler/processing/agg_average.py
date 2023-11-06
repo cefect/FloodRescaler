@@ -244,7 +244,7 @@ class AggAverage(QgsProcessingAlgorithm):
                               context=context, feedback=feedback, is_child_algorithm=True)['OUTPUT']
                               
         if not os.path.exists(ofp):
-            raise QgsProcessingException('gdal:warpreproject failed to get a result for \n%s'%pars_d['INTPUT']) 
+            raise QgsProcessingException('gdal:warpreproject failed to get a result for \n%s'%pars_d['INPUT']) 
         
         return ofp 
                               
