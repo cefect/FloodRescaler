@@ -74,9 +74,11 @@ If you use these tools for your work, please cite the following:
 
 ## 5 Development
 
-create a virtual environment from the supported QGIS version and the `./requirements.txt` file. 
+- create a virtual environment from the supported QGIS version and the `./requirements.txt` file. 
+- add a ./definitions.py file similar to the below
+- add the QGIS python plugins directory (`C:\Users\cef\AppData\Local\QGIS\QGIS3\profiles\dev\python\plugins`) to your PYTHONPATH. Needed by the downscaler to mimic the dependency on WBT.
 
-add a ./definitions.py file similar to the below:
+### definitions.py
 
 ```
 import pathlib, os
