@@ -129,6 +129,9 @@ dmypy.json
 .project
 .settings
 
+#VS Code
+.vscode
+*.code-workspace
 
 #Qgis temporary files
 *.gpkg-wal
@@ -140,5 +143,11 @@ dmypy.json
 
 #Windows shortcuts
 *.lnk
-tests/settings.json
+
+
+#project stuff
 definitions.py
+issues
+
+#WBT settings
+*settings.json
