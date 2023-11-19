@@ -34,7 +34,7 @@ from qgis.analysis import QgsNativeAlgorithms, QgsRasterCalculatorEntry, QgsRast
 
 import pandas as pd
 
-descriptions_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'descriptions')
+#descriptions_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'descriptions')
  
 class Dscale(QgsProcessingAlgorithm):
     """Downscaling port to QGIS processing script
@@ -101,14 +101,43 @@ class Dscale(QgsProcessingAlgorithm):
         return 'floodrescaler'
 
     def shortHelpString(self):
-        """return the help string by loading from an HTML file"""
+
+        return self.tr(
+            """
+            <p>Downscaling coarse WSE to a finer resolution with methods described in <a href="https://doi.org/10.5194/hess-2023-156">Bryant et. al., (2023)</a> which apply simple hydraulic assumptions and a fine resolution DEM.</p>
+            <p>Three methods are provided with varying treatment of the three resample cases (wet-wet (WW), wet-partial (WP), and dry-partial (DP)):</p>
+            <ul>
+                <li><strong>Resample</strong>: [WW] simple bilinear resampling (e.g., gdal_warp)</li>
+                <li><strong>TerrainFilter</strong>: [WW+WP]: bilinear resampling followed by a terrain filter</li>
+                <li><strong>CostGrow</strong>: [WW+WP+DP]: as in 'TerrainFilter' followed by a cost distance routine to grow the inundation and an isolated flooding filter.</li>
+            </ul>
+            <p>CostGrow requires the <strong>WhiteboxTools for QGIS</strong> plugin to be installed and configured (<a href="https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html">https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html</a>)</p>
+
+            <h3>Tips and Tricks</h3>
+            The WSE and DEM grids need to have the same extent
+            The WSE resolution should be an even multiple of the WSE resolution (e.g., downscale from 4m to 2m... not from 5m to 2m). This may require some pre-processing (gdal_warp) to obtain an even multiple.
+            For the CostGrow method, the 'isolated filter' step is often problematic. To debug this (and other steps), compare the output log to the files in the temporary directory to see which step is causing the error.
+
+            <h3>Issues and Updates</h3>
+            See the <a href="https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html">project repository</a> to post an issue or ask a question and for updates.
+
+            <h3>Attribution</h3>
+            If you use these tools for your work, please cite the following:
+            <a href="https://doi.org/10.5194/hess-2023-156">Bryant et. al., (2023)</a>
+            <a href="https://jblindsay.github.io/ghrg/pubs/LindsayGISRUK2014.pdf">Lindsay (2021)</a>
+            """
+
+        )
+        # """return the help string by loading from an HTML file"""
         
-        #get the filepath
-        fp = os.path.join(descriptions_dir, self.name()+'.html')
+        # #get the filepath
+        # fp = os.path.join(descriptions_dir, self.name()+'.html')
         
-        #load the html description file
-        with open(fp, 'r') as file:
-            return self.tr(file.read())
+        # #load the html description file
+        # with open(fp, 'r') as file:
+        #     return self.tr(file.read())
+
+
         # return self.tr(
         #     """Downscaling coarse WSE to a finer resolution with methods described in Bryant et. al., (2023) [10.5194/hess-2023-156] which apply simple hydraulic assumptions and a fine resolution DEM.
         #     Three methods are provided with varying treatment of the three resample cases (wet-wet (WW), wet-partial (WP), and dry-partial (DP)):
