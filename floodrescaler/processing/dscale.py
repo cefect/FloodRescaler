@@ -10,6 +10,7 @@
 *                                                                         *
 ***************************************************************************
 """
+__version__ = '2023.11.19'
 import pprint, os, datetime, tempfile
 from qgis import processing
 from qgis.PyQt.QtCore import QCoreApplication
@@ -286,7 +287,7 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         self.downscale = get_resolution_ratio(dem1_rlay, wse2_rlay)
         
-        feedback.pushInfo(f'started w/ \'{method}\' and downscale={self.downscale:.2f}')
+        feedback.pushInfo(f'started w/ \'{method}\' and downscale={self.downscale:.2f} w/ verison {__version__}')
         
         #=======================================================================
         # executre

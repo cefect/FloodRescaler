@@ -10,6 +10,7 @@
 *                                                                         *
 ***************************************************************************
 """
+__version__ = '2023.11.06'
 import pprint, os, warnings
 from qgis import processing
 from qgis.PyQt.QtCore import QCoreApplication
@@ -201,7 +202,7 @@ class AggAverage(QgsProcessingAlgorithm):
         mName = self.parameterAsString(params, self.INPUT_METHOD, context)
         scale = self.parameterAsDouble(params, self.INPUT_UPSCALE, context)
         
-        feedback.pushInfo(f'running with \'{mName}\' and scale={scale:.2f}')
+        feedback.pushInfo(f'running with \'{mName}\' and scale={scale:.2f} on version {__version__}')
         
  
         
