@@ -341,7 +341,8 @@ class Dscale(QgsProcessingAlgorithm):
         # resample 
         #======================================================================= 
         feedback.pushInfo(f'resample w/ downscale={downscale:.2f}')       
-        wse2_fp = self._gdal_warp(wse, downscale) 
+        wse2_fp = self._gdal_warp(wse, downscale,
+                                  OUTPUT=self._tfp(prefix='01_resample')) 
         
         if feedback.isCanceled():
             return {} 
@@ -368,7 +369,7 @@ class Dscale(QgsProcessingAlgorithm):
         # 01resample 
         #======================================================================= 
         feedback.pushInfo(f'\n\nresample w/ downscale={downscale:.2f}==============================================')       
-        wse2_fp = self._gdal_warp(wse, downscale) 
+        wse2_fp = self._gdal_warp(wse, downscale, OUTPUT=os.path.join(self.temp_dir.name, '01resample.tif')) 
         
         if feedback.isCanceled():
             return {} 
