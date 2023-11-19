@@ -11,6 +11,7 @@ from qgis.core import (
     QgsProcessingOutputLayerDefinition, QgsApplication
     )
 
+from tests.conftest import get_qrlay
 from definitions import wbt_exe
 from floodrescaler.processing.dscale import Dscale
 
@@ -28,7 +29,7 @@ def output_params(qproj):
         }
     
 
-@pytest.mark.dev 
+
 @pytest.mark.parametrize('caseName',['Ahr2021'])
 @pytest.mark.parametrize('method',[
     'Resample',
@@ -56,8 +57,8 @@ def test_runner(dem,wse,   method, output_params, context, feedback, wbt_init):
   
 @pytest.mark.parametrize('caseName',['Ahr2021'])
 def test_costdistance(wse_fp,  context, feedback, wbt_init):
-    """test the main runner""" 
- 
+    """CostDistance WBT extrapolation test""" 
+    print('stdout?')
     #setup
     algo =  Dscale()
     algo.initAlgorithm()
@@ -67,3 +68,36 @@ def test_costdistance(wse_fp,  context, feedback, wbt_init):
     
     #execute    
     algo._costdistance(wse_fp )
+
+
+@pytest.mark.dev 
+@pytest.mark.parametrize('method',[
+    #'Resample',
+    #'TerrainFilter',
+    'CostGrow',    
+    ])
+@pytest.mark.parametrize('fp_d',
+                          [
+                              {'dem':r'l:\10_IO\FloodRescaler\issues\05\Final_DEM.tif',
+                               'wse':r'l:\10_IO\FloodRescaler\issues\05\Final_WSE.tif'
+                               }
+                          ]
+                          )
+def test_issues(fp_d, method, output_params, context, feedback, wbt_init):
+    """method for debugging tests""" 
+    print('testing issues')
+    
+    #execute
+    algo=Dscale()
+    algo.initAlgorithm()
+    algo._init_algo(output_params, context, feedback)
+    res_d = algo.run_dscale( 
+        get_qrlay(fp_d['dem']),
+        get_qrlay(fp_d['wse']), 
+        method)
+    
+    print(f'temporary directory:\n  {algo.temp_dir}')
+    
+    #validate
+    assert isinstance(res_d, dict)
+    assert set(res_d.keys()).symmetric_difference(output_params.keys())==set()

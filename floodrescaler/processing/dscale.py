@@ -165,7 +165,7 @@ class Dscale(QgsProcessingAlgorithm):
         obj = QgsProcessingParameterRasterDestination       
    
         self.addParameter(
-            obj(self.OUTPUT_WSE, self.tr('WSE s1'))
+            obj(self.OUTPUT_WSE, self.tr('WSE (downscaled)'))
         )
         
         
@@ -227,6 +227,8 @@ class Dscale(QgsProcessingAlgorithm):
         """common init for tests"""
         self.proc_kwargs = dict(feedback=feedback, context=context, is_child_algorithm=True)
         self.context, self.feedback, self.params = context, feedback, params
+        self.temp_dir=tempfile.TemporaryDirectory()
+
         
         
     def _get_out(self, attn):
@@ -284,7 +286,17 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         # executre
         #=======================================================================
-        return self.methods_d[method](dem1_rlay,wse2_rlay, **kwargs)
+        result= self.methods_d[method](dem1_rlay,wse2_rlay, **kwargs)
+    
+        #=======================================================================
+        #wrap
+        #=======================================================================
+
+        feedback.pushInfo(f'finished with temp_dir\n    {self.temp_dir.name}')
+
+
+        return result
+
         
         
 
@@ -347,76 +359,108 @@ class Dscale(QgsProcessingAlgorithm):
         feedback=self.feedback
         
         #=======================================================================
-        # resample 
+        # 01resample 
         #======================================================================= 
-        feedback.pushInfo(f'resample w/ downscale={downscale:.2f}')       
+        feedback.pushInfo(f'\n\nresample w/ downscale={downscale:.2f}==============================================')       
         wse2_fp = self._gdal_warp(wse, downscale) 
         
         if feedback.isCanceled():
             return {} 
         #=======================================================================
-        # filter
+        # 02filter
         #=======================================================================
-        feedback.pushInfo('running filter against dem')  
-        wse3_fp = self._dem_filter(dem, wse2_fp)
+        feedback.pushInfo('\n\nDEM filter 1==============================================')  
+        wse3_fp = self._dem_filter(dem, wse2_fp,
+                                   OUTPUT=os.path.join(self.temp_dir.name, '02dem_filter2.tif'),
+                                   )
         
         #=======================================================================
-        # costDistanceGrow_wbt
+        # 03costDistanceGrow_wbt
         #=======================================================================
-        wse4_fp = self._costdistance(wse3_fp)
+        feedback.pushInfo('\n\ncostdistance extrapolation==============================================') 
+        wse4_fp = self._costdistance(wse3_fp,
+                                     OUTPUT=os.path.join(self.temp_dir.name, '03costdistance.tif'),
+                                     )
         
         #=======================================================================
-        # DEM filter again
+        # 04DEM filter again
         #=======================================================================
-        wse5_fp = self._dem_filter(dem, wse4_fp)
+        feedback.pushInfo('\n\nDEM filter 2==============================================') 
+        wse5_fp = self._dem_filter(dem, wse4_fp, 
+                                   OUTPUT=os.path.join(self.temp_dir.name, '04dem_filter2.tif')
+                                   )
         
         #=======================================================================
-        # isolated filter
+        # 05isolated filter
         #=======================================================================
+        feedback.pushInfo('\n\nisolated filter==============================================')
         ofp= self._filter_isolated(wse5_fp, OUTPUT=self._get_out(self.OUTPUT_WSE))
         
         
         #=======================================================================
-        # warp
+        # wrap
         #=======================================================================
         return {self.OUTPUT_WSE:ofp}
         
     def _filter_isolated(self, wse_fp, OUTPUT='TEMPORARY_OUTPUT', **kwargs):
         """remove isolated cells from grid using WBT"""
         feedback=self.feedback
+        temp_dir = os.path.join(self.temp_dir.name, 'filter_isolated')
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
+
+        tfp =lambda x:self._tfp(prefix=x, dir=temp_dir)
+ 
         #=======================================================================
         # #convert to mask
         #=======================================================================
         """wbt.clump needs 1s and 0=dry"""
+        feedback.pushInfo(f'\nprocessing 1=wet 0=dry WSE mask for WBT')
         mask1_fp = self._gdal_calc_mask(wse_fp) 
         
         mask2_fp = processing.run('native:fillnodata', 
-                                  { 'BAND' : 1, 'FILL_VALUE' : 0, 'INPUT' : mask1_fp, 'OUTPUT' : 'TEMPORARY_OUTPUT' }, 
+                                  { 'BAND' : 1, 'FILL_VALUE' : 0, 
+                                   'INPUT' : mask1_fp, 'OUTPUT' : tfp('01_WSEmask_') }, 
                                   **self.proc_kwargs)['OUTPUT']
         
         #=======================================================================
         # clump
         #=======================================================================
+        feedback.pushInfo(f'\nprocessing clump mosaic from WSE mask')
         clump_fp = processing.run('wbt:Clump', 
-                      { 'diag' : False, 'input' : mask2_fp, 'output' : tfp(), 'zero_back' : True }, 
+                      { 'diag' : False, 'input' : mask2_fp, 'output' : tfp('02_clumps_'), 'zero_back' : True }, 
+                                  **self.proc_kwargs)['output']
+        
+        #set the nodata value (needed because of the zero_back option)
+        clump_fp2 = processing.run('wbt:SetNodataValue', 
+                      { 'back_value' : 0, 'input' : clump_fp, 'output' : tfp('02b_clumps2_') }, 
                                   **self.proc_kwargs)['output']
 
-        #identify main clump        
+
+        #identify main clump 
+        feedback.pushInfo(f'\nidentifying main clump')       
         unique_fp = processing.run('native:rasterlayeruniquevaluesreport', 
-                      { 'BAND' : 1, 'INPUT' : clump_fp, 
+                      { 'BAND' : 1, 'INPUT' : clump_fp2, 
                        #'OUTPUT_HTML_FILE' : 'TEMPORARY_OUTPUT',
-                        'OUTPUT_TABLE' : tfp(suffix='.csv') }, **self.proc_kwargs)['OUTPUT_TABLE']
+                        'OUTPUT_TABLE' : self._tfp(dir=temp_dir, suffix='.csv') }, **self.proc_kwargs)['OUTPUT_TABLE']
+
                         
-        ser = pd.read_csv(unique_fp).sort_values('count', ascending=False).iloc[1, :]#take second row
+        df = pd.read_csv(unique_fp).sort_values('count', ascending=False)
+        assert df['value'].min()>0.0, f'failed to filter zerodata'
+        ser = df.iloc[0, :]#take largest
         assert ser['count']>0
         max_clump_id = ser['value']
         
-        feedback.pushInfo(f'identified largest clump {max_clump_id}\n{ser.to_dict()}')
+        
         
         #build mask of this (1= main clump, 0=not)
-        clump_mask_fp = self._gdal_calc({'FORMULA':f'A=={int(max_clump_id)}', 'INPUT_A':clump_fp, 'BAND_A':1,'NO_DATA':0,'RTYPE':5, 'OUTPUT':'TEMPORARY_OUTPUT'})
+        feedback.pushInfo(f'\nidentified largest clump {max_clump_id}\n{ser.to_dict()}\nbuilding mask')
+        clump_mask_fp = self._gdal_calc({'FORMULA':f'A=={int(max_clump_id)}', 
+                                         'INPUT_A':clump_fp, 'BAND_A':1,'NO_DATA':0,'RTYPE':5, 
+                                         'OUTPUT':tfp('03_clumpMask')})
         
         #apply clump filter
+        feedback.pushInfo(f'\napplying clump filter from mask on WSE:\n    mask:{clump_mask_fp}\n    wse:{wse_fp}')
         return self._gdal_calc({'FORMULA':f'A/B', 
                                 'INPUT_A':wse_fp, 'BAND_A':1,
                                 'INPUT_B':clump_mask_fp, 'BAND_B':1,
@@ -425,35 +469,38 @@ class Dscale(QgsProcessingAlgorithm):
         
         
     
-    def _costdistance(self, wse_fp, **kwargs):
-        """cost grow/allocation using WBT"""
+    def _costdistance(self, wse_fp, OUTPUT=None,
+                      **kwargs):
+        """build costallocation WSE extrapolation using WBT"""
         feedback=self.feedback
         context=self.context
         feedback.pushInfo(f'costDistance + costAllocation on {wse_fp}')
+
+        if OUTPUT is None:
+            OUTPUT=self._tfp()
         
         #=======================================================================
         # costDistance
         #=======================================================================
-        
-        #temp_out = QgsProcessingOutputLayerDefinition(sink='TEMPORARY_OUTPUT')
-        #temp_out = QgsProcessing.TEMPORARY_OUTPUT
-        #temp_out='TEMPORARY_OUTPUT'
-        #temp_out = tempfile.NamedTemporaryFile(suffix='.tif').name
+ 
         """
-        couldnt get the neative temp files to work
+        couldnt get the native temp files to work
  
         """
         #fillnodata in wse (for source)
-        wse1_fp = processing.run('wbt:ConvertNodataToZero', { 'input' : wse_fp, 'output' : tfp()}, **self.proc_kwargs)['output']
+        wse1_fp = processing.run('wbt:ConvertNodataToZero', 
+                                 { 'input' : wse_fp, 'output' : self._tfp()}, 
+                                 **self.proc_kwargs)['output']
         
         #build cost friction (constant)
         cost_fric_fp = processing.run('wbt:NewRasterFromBase',
-                                      { 'base' : wse1_fp,  'data_type' : 1, 'output' : tfp(), 'value' : 1.0}, 
+                                      { 'base' : wse1_fp,  'data_type' : 1, 'output' : self._tfp(), 'value' : 1.0}, 
                                       **self.proc_kwargs)['output']
         
         #compute backlink raster
         backlink_fp = processing.run('wbt:CostDistance',
-                                      { 'cost' : cost_fric_fp, 'out_accum' : tfp(), 'out_backlink' : tfp(), 'source' : wse1_fp },
+                                      { 'cost' : cost_fric_fp, 'out_accum' : self._tfp(), 
+                                       'out_backlink' : self._tfp(), 'source' : wse1_fp },
                                       **self.proc_kwargs)['out_backlink']
         
         feedback.pushInfo(f'built costDistance backlink raster \n    {backlink_fp}')
@@ -462,7 +509,9 @@ class Dscale(QgsProcessingAlgorithm):
         # costAllocation
         #=======================================================================
         costAlloc_fp = processing.run('wbt:CostAllocation',
-                                      { 'backlink' : backlink_fp, 'output' : tfp(), 'source' : wse1_fp},
+                                      { 'backlink' : backlink_fp, 
+                                       'output' : OUTPUT, 
+                                       'source' : wse1_fp},
                                       **self.proc_kwargs)['output']
                                       
         feedback.pushInfo(f'built CostAllocation \n    {costAlloc_fp}')
@@ -517,6 +566,10 @@ class Dscale(QgsProcessingAlgorithm):
     
     def _gdal_calc_mask(self, rlay, OUTPUT='TEMPORARY_OUTPUT'):
         return self._gdal_calc({'FORMULA':'A/A', 'INPUT_A':rlay, 'BAND_A':1,'NO_DATA':-9999,'OUTPUT':OUTPUT, 'RTYPE':5})
+
+    def _tfp(self, prefix=None, suffix='.tif', dir=None):
+        if dir is None: dir=self.temp_dir.name
+        return tempfile.NamedTemporaryFile(suffix=suffix,prefix=prefix, dir=dir).name
         
  
 
@@ -531,8 +584,7 @@ class Dscale(QgsProcessingAlgorithm):
 def now():
     return datetime.datetime.now()
 
-def tfp(suffix='.tif'):
-    return tempfile.NamedTemporaryFile(suffix=suffix).name
+
 
 def get_resolution_ratio( 
                              rlay_s1, #fine
@@ -551,7 +603,7 @@ def rlay_get_resolution(rlay):
 def assert_extent_equal(left, right, msg='',): 
     """ extents check"""
  
-    assert isinstance(left, QgsRasterLayer), type(left).__name__+ '\n'+msg
+    assert isinstance(left, QgsRasterLayer), f'got bad type :{type(left).__name__}'+ '\n'+msg
     assert isinstance(right, QgsRasterLayer), type(right).__name__+ '\n'+msg
     __tracebackhide__ = True
     
