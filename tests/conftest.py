@@ -12,16 +12,24 @@ from qgis.core import (
     QgsRasterLayer, QgsProject, QgsProcessingFeedback, QgsProcessingContext, Qgis, QgsSettings, QgsApplication
     )
 
+#pandas settings
+import pandas as pd
+
+# Set the maximum number of rows to 5
+pd.set_option('display.max_rows', 7)
+pd.options.mode.chained_assignment = None   #setting with copy warning handling
  
 from definitions import src_dir, wbt_exe
 
  
-print(u'QGIS version: %s, release: %s'%(Qgis.QGIS_VERSION.encode('utf-8'), Qgis.QGIS_RELEASE_NAME.encode('utf-8')))
+#print(u'QGIS version: %s, release: %s'%(Qgis.QGIS_VERSION.encode('utf-8'), Qgis.QGIS_RELEASE_NAME.encode('utf-8')))
 
  
 test_data_dir = os.path.join(src_dir, 'examples')
 
 assert os.path.exists(test_data_dir)
+
+
 
 
 
@@ -36,6 +44,9 @@ def get_rlay(caseName, layName):
     
     return QgsRasterLayer(fp, f'{caseName}_{layName}')
 
+def get_qrlay(fp):
+    return QgsRasterLayer(fp, os.path.basename(fp).replace('.tif',''))
+
 
 class MyFeedBackQ(QgsProcessingFeedback):
     """special feedback object for testing"""
@@ -44,11 +55,12 @@ class MyFeedBackQ(QgsProcessingFeedback):
         self.logger=logger.getChild('FeedBack')        
         super().__init__(*args, **kwargs)
         
-    def pushInfo(self, info):
-        self.logger.info(info)
+    def pushInfo(self, msg):
+        print(msg)
+        self.logger.info(msg)
         
-    def pushDebugInfo(self, info):
-        self.logger.debug(info)
+    def pushDebugInfo(self, msg):
+        self.logger.debug(msg)
     
 #===============================================================================
 # fixtures
@@ -60,7 +72,7 @@ def logger():
                 #filename='xCurve.log', #basicConfig can only do file or stream
                 force=True, #overwrite root handlers
                 stream=sys.stdout, #send to stdout (supports colors)
-                level=logging.INFO, #lowest level to display
+                level=logging.DEBUG, #lowest level to display
                 )
     
     return logging.getLogger('r')
@@ -69,11 +81,7 @@ def logger():
 
 @pytest.fixture(scope='session')
 def qproj(qgis_app, qgis_processing):
-    
 
-    
-
-    
     #===========================================================================
     # searchTerm='wbt'
     # for alg in qgis_app.processingRegistry().algorithms():
