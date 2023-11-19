@@ -390,11 +390,22 @@ class Dscale(QgsProcessingAlgorithm):
                                    OUTPUT=os.path.join(self.temp_dir.name, '04dem_filter2.tif')
                                    )
         
+
+        #apply DEM mask
+        wse6_fp=self._gdal_calc({
+                'FORMULA':'A*(B/B)', 
+                'INPUT_A':wse5_fp, 'BAND_A':1, 
+                'INPUT_B':dem, 'BAND_B':1, 
+                #'FORMULA' : '(A!=0)/(A!=0)',
+                'NO_DATA':0.0, 
+                'OUTPUT':os.path.join(self.temp_dir.name, '05bdem_mask.tif'), 
+                'RTYPE':5})
+        
         #=======================================================================
         # 05isolated filter
         #=======================================================================
         feedback.pushInfo('\n\nisolated filter==============================================')
-        ofp= self._filter_isolated(wse5_fp, OUTPUT=self._get_out(self.OUTPUT_WSE))
+        ofp= self._filter_isolated(wse6_fp, OUTPUT=self._get_out(self.OUTPUT_WSE))
         
         
         #=======================================================================
