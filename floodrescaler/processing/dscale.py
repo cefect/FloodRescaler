@@ -32,6 +32,8 @@ from qgis.core import (QgsProcessing,
 from qgis.analysis import QgsNativeAlgorithms, QgsRasterCalculatorEntry, QgsRasterCalculator
 
 import pandas as pd
+
+descriptions_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'descriptions')
  
 class Dscale(QgsProcessingAlgorithm):
     """Downscaling port to QGIS processing script
@@ -71,14 +73,14 @@ class Dscale(QgsProcessingAlgorithm):
         lowercase alphanumeric characters only and no spaces or other
         formatting characters.
         """
-        return 'fres_dscale'
+        return 'dscale'
 
     def displayName(self):
         """
         Returns the translated algorithm name, which should be used for any
         user-visible display of the algorithm name.
         """
-        return self.tr('Downscaling')
+        return self.tr('Downscaling WSE')
 
     def group(self):
         """
@@ -98,21 +100,24 @@ class Dscale(QgsProcessingAlgorithm):
         return 'floodrescaler'
 
     def shortHelpString(self):
-        """
-        Returns a localised short helper string for the algorithm. This string
-        should provide a basic description about what the algorithm does and the
-        parameters and outputs associated with it..
-        """
-        return self.tr(
-            """Downscaling coarse WSE to a finer resolution with methods described in Bryant et. al., (2023) [10.5194/hess-2023-156] which apply simple hydraulic assumptions and a fine resolution DEM.
-            Three methods are provided with varying treatment of the three resample cases (wet-wet (WW), wet-partial (WP), and dry-partial (DP)):
-            \'Resample\': [WW] simple bilinear resampling (e.g., gdal_warp)
-            \'TerrainFilter\': [WW+WP]: bilinear resampling followed by a terrain filter
-            \'CostGrow\': [WW+WP+DP]: as in \'TerrainFilter\' followed by a cost distance routine to grow the inundation and an isolated flooding filter. 
+        """return the help string by loading from an HTML file"""
+        
+        #get the filepath
+        fp = os.path.join(descriptions_dir, self.name()+'.html')
+        
+        #load the html description file
+        with open(fp, 'r') as file:
+            return self.tr(file.read())
+        # return self.tr(
+        #     """Downscaling coarse WSE to a finer resolution with methods described in Bryant et. al., (2023) [10.5194/hess-2023-156] which apply simple hydraulic assumptions and a fine resolution DEM.
+        #     Three methods are provided with varying treatment of the three resample cases (wet-wet (WW), wet-partial (WP), and dry-partial (DP)):
+        #     \'Resample\': [WW] simple bilinear resampling (e.g., gdal_warp)
+        #     \'TerrainFilter\': [WW+WP]: bilinear resampling followed by a terrain filter
+        #     \'CostGrow\': [WW+WP+DP]: as in \'TerrainFilter\' followed by a cost distance routine to grow the inundation and an isolated flooding filter. 
             
         
-        \'CostGrow\' requires the \'WhiteboxTools for QGIS\' plugin to be installed and configured (https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html)
-            """)
+        # \'CostGrow\' requires the \'WhiteboxTools for QGIS\' plugin to be installed and configured (https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html)
+        #     """)
 
     def initAlgorithm(self, config=None):
         """
