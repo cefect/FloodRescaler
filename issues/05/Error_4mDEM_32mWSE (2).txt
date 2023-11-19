@@ -1,0 +1,43 @@
+QGIS version: 3.32.3-Lima
+QGIS code revision: 67d46100b5b
+Qt version: 5.15.2
+Python version: 3.9.5
+GDAL version: 3.3.2
+GEOS version: 3.9.1-CAPI-1.14.2
+PROJ version: Rel. 8.1.1, September 1st, 2021
+PDAL version: 2.3.0 (git-version: Release)
+Algorithm started at: 2023-11-06T13:53:44
+Algorithm 'Downscaling' starting…
+Input parameters:
+{ 'INPUT_DEM' : '/Users/abaruah/Documents/FloodRescaler/IputData/QGIS_3.28.0/4m_truncateddem.tif', 'INPUT_METH' : 'CostGrow', 'INPUT_WSE' : '/Users/abaruah/Documents/FloodRescaler/IputData/QGIS_3.28.0/reprojected32m_wse.tif', 'OUTPUT_WSE' : '/Users/abaruah/Documents/FloodRescaler/IputData/s1_wse.tif' }
+
+starting w/ 
+{'INPUT_DEM': '4m_truncateddem_87eaac32_74e5_421b_9a88_c4bc394fc84c',
+'INPUT_METH': 'CostGrow',
+'INPUT_WSE': 'reprojected32m_wse_b21f4c0d_c22f_4d88_ab7b_bf4be84e9ea1',
+'OUTPUT_WSE': <QgsProcessingOutputLayerDefinition {'sink':/Users/abaruah/Documents/FloodRescaler/IputData/s1_wse.tif, 'createOptions': {'fileEncoding': 'UTF-8'}}>}
+finished loading raster layers
+running with 'CostGrow'
+started w/ 'CostGrow' and downscale=8.00
+resample w/ downscale=8.00
+GDAL command:
+gdalwarp -overwrite -dstnodata -9999.0 -tr 4.0 4.0 -r bilinear -of GTiff /Users/abaruah/Documents/FloodRescaler/IputData/QGIS_3.28.0/reprojected32m_wse.tif /private/var/folders/lk/cq6skjg90yl9vgt24mvdm6rr0000gr/T/processing_aZsFqa/19c0fbaed3964f3dba3284e0451fe80d/OUTPUT.tif
+GDAL command output:
+Creating output file that is 10001P x 7505L.
+Processing /Users/abaruah/Documents/FloodRescaler/IputData/QGIS_3.28.0/reprojected32m_wse.tif [1/1] : 0Using internal nodata values (e.g. -3.40282e+38) for image /Users/abaruah/Documents/FloodRescaler/IputData/QGIS_3.28.0/reprojected32m_wse.tif.
+...10...20...30...40...50...60...70...80...90...100 - done.
+Process completed successfully
+Results: {'OUTPUT': '/private/var/folders/lk/cq6skjg90yl9vgt24mvdm6rr0000gr/T/processing_aZsFqa/19c0fbaed3964f3dba3284e0451fe80d/OUTPUT.tif'}
+running filter against dem
+GDAL command:
+gdal_calc.py --overwrite --calc "A*(A > B)" --format GTiff --type Float32 --NoDataValue 0.0 -A /private/var/folders/lk/cq6skjg90yl9vgt24mvdm6rr0000gr/T/processing_aZsFqa/19c0fbaed3964f3dba3284e0451fe80d/OUTPUT.tif --A_band 1 -B /Users/abaruah/Documents/FloodRescaler/IputData/QGIS_3.28.0/4m_truncateddem.tif --B_band 1 --outfile /private/var/folders/lk/cq6skjg90yl9vgt24mvdm6rr0000gr/T/processing_aZsFqa/4e3a80bdadfa4b52aece80efb3528d7a/OUTPUT.tif
+GDAL command output:
+Error! Dimensions of file /Users/abaruah/Documents/FloodRescaler/IputData/QGIS_3.28.0/4m_truncateddem.tif (10003, 7503) are different from other files (10001, 7505). Cannot proceed
+Process returned error code 1
+Results: {'OUTPUT': '/private/var/folders/lk/cq6skjg90yl9vgt24mvdm6rr0000gr/T/processing_aZsFqa/4e3a80bdadfa4b52aece80efb3528d7a/OUTPUT.tif'}
+gdal:rastercalculator failed to get a result for 
+A*(A > B)
+Execution failed after 6.88 seconds
+
+Loading resulting layers
+Algorithm 'Downscaling' finished
