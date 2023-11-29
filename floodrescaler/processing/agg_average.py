@@ -10,7 +10,7 @@
 *                                                                         *
 ***************************************************************************
 """
-__version__ = '2023.11.06'
+__version__ = '2023.11.29'
 import pprint, os, warnings
 from qgis import processing
 from qgis.PyQt.QtCore import QCoreApplication
@@ -102,11 +102,21 @@ class AggAverage(QgsProcessingAlgorithm):
         parameters and outputs associated with it..
         """
         return self.tr(
-            """Aggregating (coarsening) flood hazard layers with methods described in Bryant et. al., (2023) [10.1029/2023WR035100]. 
-            Two methods are provided, both use simple averaging to compute the DEM grid.
-             \'WSH Averaging\': uses the WSH (water depths) grid as the primary layer, which is aggregated through simple averaging, 
-             while the WSE grid is computed via addition with the DEM grid.
-             \'WSE Averaging\' first aggregates the WSE grid, before filtering against the DEM, then subtracting to compute the WSH grid.            
+            """
+            Aggregating (coarsening) flood hazard layers with methods described in <a href="https://doi.org/10.1029/2023WR035100">Bryant et. al., (2023)</a>. 
+            Two methods are provided, both use simple averaging to compute the DEM grid:
+            <strong>WSH Averaging</strong>: uses the WSH (water depths) grid as the primary layer, which is aggregated through simple averaging, while the WSE grid is computed via addition with the DEM grid.
+            <strong>WSE Averaging</strong>: first aggregates the WSE grid, before filtering against the DEM, then subtracting to compute the WSH grid.            
+
+            <h3>Tips and Tricks</h3>
+            TODO
+
+            <h3>Issues and Updates</h3>
+            See the <a href="https://github.com/cefect/FloodRescaler">project repository</a> for updates, to post an issue/question, or to request new features.
+
+            <h3>Attribution</h3>
+            If you use these tools for your work, please cite <a href="https://doi.org/10.1029/2023WR035100">Bryant et. al., (2023)</a>
+
             """)
 
     def initAlgorithm(self, config=None):

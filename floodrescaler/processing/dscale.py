@@ -10,7 +10,7 @@
 *                                                                         *
 ***************************************************************************
 """
-__version__ = '2023.11.19'
+__version__ = '2023.11.29'
 import pprint, os, datetime, tempfile
 from qgis import processing
 from qgis.PyQt.QtCore import QCoreApplication
@@ -119,7 +119,7 @@ class Dscale(QgsProcessingAlgorithm):
             For the CostGrow method, the 'isolated filter' step is often problematic. To debug this (and other steps), compare the output log to the files in the temporary directory to see which step is causing the error.
 
             <h3>Issues and Updates</h3>
-            See the <a href="https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html">project repository</a> to post an issue or ask a question and for updates.
+            See the <a href="https://github.com/cefect/FloodRescaler">project repository</a> for updates, to post an issue/question, or to request new features.
 
             <h3>Attribution</h3>
             If you use these tools for your work, please cite the following:
