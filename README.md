@@ -21,7 +21,7 @@ In the QGIS [Processing Toolbox](https://docs.qgis.org/3.22/en/docs/user_manual/
 
 ### install and configure WhiteboxTools
 Ensure the [WhiteboxTools for QGIS plugin](https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html) is installed and configured. 
-Note this is only required for the Downscaling/CostGrow algo. 
+Note this is only required for the Downscaling/CostGrow algo.  Tested against v2.2.0.
 
 ## 2 Use
 Instructions are provided on the algorithm dialog
