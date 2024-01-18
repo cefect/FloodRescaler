@@ -3,7 +3,7 @@
 [![DOI](https://zenodo.org/badge/547351392.svg)](https://zenodo.org/badge/latestdoi/547351392)
 
 QGIS Processing scripts for rescaling flood hazard rasters that includes the following tools:
-- Resolution enhancement (i.e., Downscaling): Three methods for interpolating a high resolution WSE grid using a high resolution DEM and simple hydraulic assumptions described in [Bryant et. al., (2022)](https://hess.copernicus.org/preprints/hess-2023-156/).
+- Resolution enhancement (i.e., Downscaling): Three methods for interpolating a high resolution WSE grid using a high resolution DEM and simple hydraulic assumptions described in [Bryant et. al., (2022)](https://hess.copernicus.org/preprints/hess-2023-156/). For more advanced applications and features, see the [FloodDownscaler2](https://github.com/cefect/FloodDownscaler2) project.
 - Aggregation via Averaging: Two methods for coarsening flood hazard grids described in [Bryant et. al., (2022)](https://doi.org/10.1029/2023WR035100)
 
 
@@ -21,7 +21,7 @@ In the QGIS [Processing Toolbox](https://docs.qgis.org/3.22/en/docs/user_manual/
 
 ### install and configure WhiteboxTools
 Ensure the [WhiteboxTools for QGIS plugin](https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html) is installed and configured. 
-Note this is only required for the Downscaling/CostGrow algo. 
+Note this is only required for the Downscaling/CostGrow algo.  Tested against v2.2.0.
 
 ## 2 Use
 Instructions are provided on the algorithm dialog
