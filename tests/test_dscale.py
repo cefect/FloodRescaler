@@ -35,14 +35,16 @@ def output_params(qproj, tmpdir):
     return {k:get_out(k) for k in ['OUTPUT_WSE']}
  
 
-
+@pytest.mark.dev
 @pytest.mark.parametrize('caseName',['Ahr2021'])
-@pytest.mark.parametrize('method',[
-    'Resample',
-    'TerrainFilter',
-    'CostGrow',    
+@pytest.mark.parametrize('method, skwargs',[
+    ('Resample', dict()),
+    ('TerrainFilter', dict()),
+    ('CostGrow', dict(filter_isolated_kwargs=dict(method='area'))),
+    ('CostGrow', dict(filter_isolated_kwargs=dict(method='pixel'))),   
     ])
-def test_runner(dem,wse,   method, output_params, context, feedback, wbt_init, tmpdir):
+def test_runner(dem,wse,   method, skwargs,
+                output_params, context, feedback, wbt_init, tmpdir):
     """test the main runner""" 
     assert isinstance(dem, QgsRasterLayer)
     
@@ -50,7 +52,10 @@ def test_runner(dem,wse,   method, output_params, context, feedback, wbt_init, t
     algo=Dscale()
     algo.initAlgorithm()
     algo._init_algo(output_params, context, feedback, temp_dir=tmpdir)
-    res_d = algo.run_dscale( dem, wse, method)
+    
+ 
+    
+    res_d = algo.run_dscale( dem, wse, method, **skwargs)
     
     #validate
     assert isinstance(res_d, dict)
@@ -85,7 +90,7 @@ tdir = lambda x: os.path.join(test_data_dir2, 'test_filter_isolated', x)
 @pytest.mark.parametrize('wse_fp, wse_raw_fp',[(tdir('05bdem_mask.tif'), tdir('wse_raw.tif'))])
 @pytest.mark.parametrize('method',[
     'area', 
-    #'pixel',
+    'pixel',
     ])
 @pytest.mark.parametrize('clump_cnt', [3])
 def test_filter_isolated(wse_fp, wse_raw_fp, method,  clump_cnt, 
@@ -99,7 +104,7 @@ def test_filter_isolated(wse_fp, wse_raw_fp, method,  clump_cnt,
 
     
     #execute    
-    algo._filter_isolated(wse_fp, wse_raw_fp=wse_raw_fp, method=method, clump_cnt=clump_cnt)
+    algo._filter_isolated(wse_fp, wse_raw=QgsRasterLayer(wse_raw_fp), method=method, clump_cnt=clump_cnt)
     
 
 
@@ -108,11 +113,12 @@ def test_filter_isolated(wse_fp, wse_raw_fp, method,  clump_cnt,
 #===============================================================================
 idir = lambda x: os.path.join(src_dir, 'issues', x)
 
-@pytest.mark.dev
-@pytest.mark.parametrize('method',[
-    'Resample',
-    'TerrainFilter',
-    'CostGrow',    
+
+@pytest.mark.parametrize('method, skwargs',[
+    ('Resample', dict()),
+    ('TerrainFilter', dict()),
+    ('CostGrow', dict(filter_isolated_kwargs=dict(method='area'))),
+    ('CostGrow', dict(filter_isolated_kwargs=dict(method='pixel'))),   
     ])
 @pytest.mark.parametrize('fp_d',
                           [
@@ -123,7 +129,8 @@ idir = lambda x: os.path.join(src_dir, 'issues', x)
                               {'dem':idir(r'13\input_1.tif'),'wse':idir(r'13\input_2.tif')}
                           ]
                           )
-def test_issues(fp_d, method, output_params, context, feedback, wbt_init, tmpdir):
+def test_issues(fp_d, method, skwargs,
+                output_params, context, feedback, wbt_init, tmpdir):
     """method for debugging tests""" 
     print('testing issues')
     
@@ -134,7 +141,7 @@ def test_issues(fp_d, method, output_params, context, feedback, wbt_init, tmpdir
     res_d = algo.run_dscale( 
         get_qrlay(fp_d['dem']),
         get_qrlay(fp_d['wse']), 
-        method)
+        method, **skwargs)
     
     print(f'temporary directory:\n  {algo.temp_dir}')
     print(f'OUTPUT_WSE:\n    %s'%res_d['OUTPUT_WSE'])

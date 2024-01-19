@@ -23,11 +23,14 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingParameterRasterDestination,
                        QgsProcessingParameterNumber,
                        QgsProcessingParameterString,
-                       QgsRasterLayer ,
+                       QgsRasterLayer,
                        QgsCoordinateTransformContext,
                        QgsMapLayerStore,
                        QgsProcessingOutputLayerDefinition,
-                       QgsProject
+                       QgsProject,
+                       QgsProcessingFeatureSourceDefinition,
+                       QgsFeatureRequest,
+                       QgsVectorLayer,
  
                        )
 
@@ -252,6 +255,8 @@ class Dscale(QgsProcessingAlgorithm):
             
         if not os.path.exists(temp_dir):os.makedirs(temp_dir)
         self.temp_dir=temp_dir
+        
+        self.logger = log(feedback=feedback)
 
         
         
@@ -377,7 +382,9 @@ class Dscale(QgsProcessingAlgorithm):
         
         
         
-    def run_CostGrow(self, dem, wse, **kwargs):
+    def run_CostGrow(self, dem, wse, 
+                     filter_isolated_kwargs=dict(),
+                     **kwargs):
         """costGrow"""
         
         downscale=self.downscale
@@ -386,7 +393,7 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         # 01resample 
         #======================================================================= 
-        feedback.pushInfo(f'\n\nresample w/ downscale={downscale:.2f}==============================================')       
+        feedback.pushInfo(f'\n\nresample w/ downscale={downscale:.2f} \n==============================================')       
         wse2_fp = self._gdal_warp(wse, downscale, OUTPUT=os.path.join(self.temp_dir, '01resample.tif')) 
         
         if feedback.isCanceled():
@@ -394,7 +401,7 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         # 02filter
         #=======================================================================
-        feedback.pushInfo('\n\nDEM filter 1==============================================')  
+        feedback.pushInfo('\n\nDEM filter 1 \n==============================================')  
         wse3_fp = self._dem_filter(dem, wse2_fp,
                                    OUTPUT=os.path.join(self.temp_dir, '02dem_filter2.tif'),
                                    )
@@ -402,7 +409,7 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         # 03costDistanceGrow_wbt
         #=======================================================================
-        feedback.pushInfo('\n\ncostdistance extrapolation==============================================') 
+        feedback.pushInfo('\n\ncostdistance extrapolation \n==============================================') 
         wse4_fp = self._costdistance(wse3_fp,
                                      OUTPUT=os.path.join(self.temp_dir, '03costdistance.tif'),
                                      )
@@ -434,8 +441,9 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         # 05isolated filter
         #=======================================================================
-        feedback.pushInfo('\n\nisolated filter==============================================')
-        ofp= self._filter_isolated(wse6_fp, OUTPUT=self._get_out(self.OUTPUT_WSE))
+        feedback.pushInfo('\n\nisolated filter \n==============================================')
+        ofp= self._filter_isolated(wse6_fp, OUTPUT=self._get_out(self.OUTPUT_WSE), wse_raw = wse,
+                                   **filter_isolated_kwargs)
         
         assert os.path.exists(ofp)
         
@@ -445,13 +453,27 @@ class Dscale(QgsProcessingAlgorithm):
         feedback.pushDebugInfo(f'finished on \n    {ofp}')
         return {self.OUTPUT_WSE:ofp}
         
+
+    def _get_mask_of_clumps(self, tfp, clump_fp, clump_ids):
+        """get a mask from specified pixel values"""
+        #reclassify to pull out good values
+        reclass_vals = ';'.join([f'9999.0;{e}' for e in clump_ids])
+        reclass_fp = processing.run('wbt:Reclass', {'assign_mode':True, 'input':clump_fp, 'output':tfp('03_clumpReclassify'), 'reclass_vals':reclass_vals}, **self.proc_kwargs)['output']
+        
+ 
+        clump_mask_fp = self._gdal_calc({'FORMULA':f'A==9999.0', 
+                'INPUT_A':reclass_fp, 'BAND_A':1, 'NO_DATA':0, 'RTYPE':5, 
+                'OUTPUT':tfp('03_clumpMask')})
+        
+        return clump_mask_fp
+
     def _filter_isolated(self, wse_fp,
                          clump_cnt=1,
                         method='area',
                          min_pixel_frac=0.01,
-                         wse_raw_fp=None,
-                         
-                         OUTPUT='TEMPORARY_OUTPUT', **kwargs):
+                         wse_raw=None,                         
+                         OUTPUT='TEMPORARY_OUTPUT', 
+                         **kwargs):
         """remove isolated cells from grid using WBT
         
         
@@ -472,7 +494,7 @@ class Dscale(QgsProcessingAlgorithm):
         min_pixel_frac: float
             for method='pixel', the minimum fraction of total domain pixels allowed for the clump search
             
-        wse_raw_fp: str
+        wse_raw: str
             for method='pixel', raw WSE from which to get intersect points
             ideally the raw coarse WSE input
             see note below on resampling
@@ -487,6 +509,9 @@ class Dscale(QgsProcessingAlgorithm):
             os.makedirs(temp_dir)
 
         tfp =lambda x:self._tfp(prefix=x, dir=temp_dir) #get temporary file
+        
+        log = self.logger
+                
  
         #=======================================================================
         # #convert to mask
@@ -531,7 +556,7 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         
         #===================================================================
-        # area-based selection
+        # area-based selection-----
         #===================================================================
         feedback.pushInfo(f'clump selection method \'{method}\'')
  
@@ -542,57 +567,81 @@ class Dscale(QgsProcessingAlgorithm):
         
         
         #=======================================================================
-        # pixel-based selection
+        # pixel-based selection-------
         #=======================================================================
         elif method=='pixel':
-            assert isinstance(wse_raw_fp, str), 'for method=pixel must pass wse_raw_fp'
-            assert os.path.exists(wse_raw_fp)
+            assert isinstance(wse_raw, QgsRasterLayer), 'for method=pixel must pass wse_raw'
+ 
             log.debug(f'filtering clumps w/ min_pixel_frac={min_pixel_frac}')
-            
+ 
             #===================================================================
-            # #drop some small clumps
+            # drop some small clumps
             #===================================================================
             """because polygnoizing is very slow... want to drop any super small groups"""
             #select using 100 or some fraction
-            bx = clump_df['pixel_cnt']>min(min_pixel_frac*clump_df['pixel_cnt'].sum(), 100)
-            clump_ids = clump_df[bx].iloc[:,0].values
+            bx = clump_df['count']>min(min_pixel_frac*clump_df['count'].sum(), 100)
+ 
             
             log.debug(f'pre-selected {bx.sum()}/{len(bx)} clumps for pixel selection')
             
             # build a mask of this
-            bool_ar = np.isin(clump_ar, clump_ids)
+            mask_large_clumps = self._get_mask_of_clumps(tfp, clump_fp, clump_df[bx].iloc[:,0].values)
             
-            #write as mask
-            clump_fp1 = write_array(np.where(bool_ar, clump_ar, np.nan), 
-                                    ofp=os.path.join(tmp_dir, 'clump_mask_pre-filter.tif'), 
-                                    masked=False, **profile)
+            #apply it to the clumps
+            clump_major_fp = self._gdal_calc({'FORMULA':f'A*B', 
+                                'INPUT_A':clump_fp2, 'BAND_A':1,
+                                'INPUT_B':mask_large_clumps, 'BAND_B':1,
+                                'NO_DATA':0,'RTYPE':5, 'OUTPUT':tfp('03_clumpsMajor_')})
             
-            log.debug(f'wrote filtered clump mas to \n    {clump_fp1}')
+            log.debug(f'wrote major clumps to \n    {clump_major_fp}')
             
             #===================================================================
             # polygonize clumps
-            #===================================================================
-            clump_vlay_fp = os.path.join(tmp_dir, 'clump_raster_to_vector_polygons.shp') #needs to be a shapefile
-            if not self.raster_to_vector_polygons(clump_fp1, clump_vlay_fp) == 0:
-                raise IOError('raster_to_vector_polygons')
+            #===================================================================            
+            clump_vlay_fp = processing.run('gdal:polygonize', 
+                                 { 'BAND' : 1, 'EIGHT_CONNECTEDNESS' : True, 
+                                  'EXTRA' : '', 'FIELD' : 'clump_id', 
+                                  'INPUT' : clump_major_fp, 
+                                  'OUTPUT' : self._tfp(prefix='03_clumpPoly_', dir=temp_dir, suffix='.shp') },
+                                 **self.proc_kwargs)['OUTPUT']
+            
+ 
             log.debug(f'vectorized clumps to \n    {clump_vlay_fp}')
  
             #===================================================================
             # intersect of clumps and wse coarse
             #===================================================================
-            """NOTE: could speed things up by coarsening t his"""
-            wse_raw_pts = os.path.join(tmp_dir, 'wse_raw_points.shp') #needs to be a shapefile
-            if not self.raster_to_vector_points(wse_raw_fp, wse_raw_pts) == 0:
-                raise IOError('raster_to_vector_points')
-            
-            #load both vector layers
-            clump_poly_gdf = gpd.read_file(clump_vlay_fp)
-            wse_pts_gdf = gpd.read_file(wse_raw_pts)
+            """NOTE: could speed things up by coarsening this
+            could make more accurate by using polygons (poly v poly intersect)
+            """
+            #get coarse points
+            wse_raw_pts = processing.run('wbt:RasterToVectorPoints', 
+                      { 'input' : wse_raw, 'output' : self._tfp(prefix='04_rawWsePoints', dir=temp_dir, suffix='.shp') }, 
+                                  **self.proc_kwargs)['output']
  
             
-            clump_ids = clump_poly_gdf.sjoin(wse_pts_gdf, how='inner', predicate='intersects')['VALUE_left'].unique()
+            #select intersecting new polygons 
+            clump_vlay_sel_fp = processing.run('native:extractbylocation', 
+                                 { 'INPUT' : clump_vlay_fp, 'INTERSECT' : wse_raw_pts, 
+                                  'OUTPUT' : tfp('05_clumpPolySelected_'), 'PREDICATE' : [0] },
+                                  **self.proc_kwargs)['OUTPUT']
             
-            log.debug(f'selected {bx.sum()}/{len(clump_df)} clumps by pixel intersect')
+
+            
+            #list selection
+            uqv_s = processing.run('qgis:listuniquevalues', 
+                                  { 'FIELDS' : ['clump_id'],
+                                    'INPUT' : QgsProcessingFeatureSourceDefinition(clump_vlay_sel_fp, 
+                                                                                   selectedFeaturesOnly=False, 
+                                                                                   featureLimit=-1, 
+                                                                                   geometryCheck=QgsFeatureRequest.GeometryAbortOnInvalid), 
+                                   'OUTPUT' : 'TEMPORARY_OUTPUT', 'OUTPUT_HTML_FILE' : 'TEMPORARY_OUTPUT' },
+                                  **self.proc_kwargs)['UNIQUE_VALUES']
+            
+            assert len(uqv_s)>0, f'failed to get any unique polygons during clump selection'
+            clump_ids = list(map(int, uqv_s.split(';')))
+ 
+            log.debug(f'selected {len(clump_ids)}/{len(clump_df)} clumps by pixel intersect w/ {wse_raw}')
             
             
         else:
@@ -603,17 +652,7 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         feedback.pushInfo(f'\nidentified {len(clump_ids)} clumps\nbuilding mask')
         
-        #reclassify to pull out good values
-        reclass_vals = ';'.join([f'9999.0;{e}' for e in clump_ids])
-        reclass_fp = processing.run('wbt:Reclass', 
-                                    { 'assign_mode' : True,'input' : clump_fp,'output' : tfp('03_clumpReclassify'),
-                                     'reclass_vals' : reclass_vals},**self.proc_kwargs)['output']
-        
-        
-        #ar = gdal_get_array(clump_fp)
-        clump_mask_fp = self._gdal_calc({'FORMULA':f'A==9999.0', 
-                                         'INPUT_A':reclass_fp, 'BAND_A':1,'NO_DATA':0,'RTYPE':5, 
-                                         'OUTPUT':tfp('03_clumpMask')})
+        clump_mask_fp = self._get_mask_of_clumps(tfp, clump_fp, clump_ids)
         
         #apply clump filter
         feedback.pushInfo(f'\napplying clump filter from mask on WSE:\n    mask:{clump_mask_fp}\n    wse:{wse_fp}')
@@ -774,6 +813,15 @@ def rlay_get_resolution(rlay):
 #     
 #     return array1
 #===============================================================================
+
+class log(object):
+    """log emulator"""
+    def __init__(self, feedback):
+        self.feedback=feedback
+    def debug(self, msg):
+        self.feedback.pushDebugInfo(msg)
+    def info(self, msg):
+        self.feedback.pushInfo(msg)
 
 def assert_extent_equal(left, right, msg='',): 
     """ extents check"""
