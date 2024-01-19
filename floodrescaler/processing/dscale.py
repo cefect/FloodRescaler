@@ -54,9 +54,14 @@ class Dscale(QgsProcessingAlgorithm):
  
     INPUT_METHOD = 'INPUT_METH'
     
-    #outputs
- 
+    #outputs 
     OUTPUT_WSE = 'OUTPUT_WSE'
+    
+    
+    #parameters
+    cg_isolated_methods_l = ['area', 'pixel']
+    INPUT_CG_ISO_clump_cnt='INPUT_CG_ISO_clump_cnt'
+    INPUT_CG_ISO_METHOD='INPUT_CG_ISO_METHOD'
  
     
     
@@ -116,6 +121,13 @@ class Dscale(QgsProcessingAlgorithm):
                 <li><strong>CostGrow</strong>: [WW+WP+DP]: as in 'TerrainFilter' followed by a cost distance routine to grow the inundation and an isolated flooding filter.</li>
             </ul>
             <p>CostGrow requires the <strong>WhiteboxTools for QGIS</strong> plugin to be installed and configured (<a href="https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html">https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html</a>)</p>
+            
+            <p>CostGrow's 'isolated flooding' filter is used to select the result WSE clump from the cost distance map. Two methods are available for this:</p>
+            <ul>
+                <li><strong>area</strong>: the n='selection count' clumps with largest area are selected (faster, may be inaccurate for large complex domains)</li>
+                <li><strong>pixel</strong>: those clumps overlapping the original coarse WSE are included (slower, more accurate) </li>
+            </ul>
+            
 
             <h3>Tips and Tricks</h3>
             The WSE and DEM grids need to have the same extent
@@ -168,15 +180,32 @@ class Dscale(QgsProcessingAlgorithm):
         
         #=======================================================================
         # pars
-        #======================================================================= 
- 
-        
+        #=======================================================================        
         # add methods parameter with some hints
         param = QgsProcessingParameterString(self.INPUT_METHOD, 
                                              self.tr('downscaling method'), 
                                              defaultValue='Resample', multiLine=False)
         
         param.setMetadata({'widget_wrapper':{ 'value_hints': list(self.methods_d.keys()) }})
+        self.addParameter(param)
+        
+        
+        #CostGrow._filter_isolated.methods
+        param = QgsProcessingParameterString(self.INPUT_CG_ISO_METHOD, 
+                                             self.tr('CostGrow: isolated filter: method'), 
+                                             defaultValue=self.cg_isolated_methods_l[0], 
+                                             optional=True,
+                                             multiLine=False)
+        
+        param.setMetadata({'widget_wrapper':{ 'value_hints':self.cg_isolated_methods_l }})
+        self.addParameter(param)
+        
+        #CostGrow._filter_isolated.clump_cnt
+        param = QgsProcessingParameterNumber(self.INPUT_CG_ISO_clump_cnt, 
+                                             self.tr('CostGrow: isolated filter: method=\'area\': selection count'), 
+                                             defaultValue=1, optional=True,
+                                             type=QgsProcessingParameterNumber.Integer)
+        
         self.addParameter(param)
         
         #=======================================================================
@@ -227,10 +256,20 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         # params
         #=======================================================================
-        mName = self.parameterAsString(params, self.INPUT_METHOD, context)
+        method = self.parameterAsString(params, self.INPUT_METHOD, context)
+        kwargs = dict()
+        
+        if method=='CostGrow':
+            kwargs['filter_isolated_kwargs'] = dict(
+                clump_cnt = self.parameterAsInt(params, self.INPUT_CG_ISO_clump_cnt, context),
+                method = self.parameterAsString(params, self.INPUT_CG_ISO_METHOD, context)
+                )
+
+            
+            
  
         
-        feedback.pushInfo(f'running with \'{mName}\'') 
+        feedback.pushInfo(f'running with \'{method}\'\n{kwargs}') 
         
         if feedback.isCanceled():
             return {}
@@ -239,9 +278,9 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================.
  
  
-        return self.run_dscale(input_dem, input_wse, mName, 
+        return self.run_dscale(input_dem, input_wse, method, 
                                #context=context, feedback=feedback,
-                               **params)
+                               **params, **kwargs)
         
     def _init_algo(self, params, context, feedback,
                    temp_dir=None,
