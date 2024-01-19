@@ -12,22 +12,28 @@ from qgis.core import (
     )
 
 from tests.conftest import get_qrlay
-from definitions import wbt_exe
+from definitions import wbt_exe, src_dir
 from floodrescaler.processing.dscale import Dscale
 
-
+#NOTE: conftest uses the examples directory
+test_data_dir2 = os.path.join(src_dir, 'tests', 'data')
 
 
 @pytest.fixture(scope='function')
-def output_params(qproj):
-    """setting up default output parameters for tests"""    
-    def get_out():
-        return QgsProcessingOutputLayerDefinition(sink='TEMPORARY_OUTPUT', destinationProject=qproj)
+def output_params(qproj, tmpdir):
+    """setting up default output parameters for tests"""   
     
-    return {
-        'OUTPUT_WSE':get_out()
-        }
     
+    def get_out(k):
+        """this deletes on exit?""" 
+        #return QgsProcessingOutputLayerDefinition(sink='TEMPORARY_OUTPUT', destinationProject=qproj)
+        
+        """save to pytest dir"""
+        return QgsProcessingOutputLayerDefinition(sink=os.path.join(tmpdir, k+'.tif'), destinationProject=qproj)    
+    
+    
+    return {k:get_out(k) for k in ['OUTPUT_WSE']}
+ 
 
 
 @pytest.mark.parametrize('caseName',['Ahr2021'])
@@ -36,14 +42,14 @@ def output_params(qproj):
     'TerrainFilter',
     'CostGrow',    
     ])
-def test_runner(dem,wse,   method, output_params, context, feedback, wbt_init):
+def test_runner(dem,wse,   method, output_params, context, feedback, wbt_init, tmpdir):
     """test the main runner""" 
     assert isinstance(dem, QgsRasterLayer)
     
     #execute
     algo=Dscale()
     algo.initAlgorithm()
-    algo._init_algo(output_params, context, feedback)
+    algo._init_algo(output_params, context, feedback, temp_dir=tmpdir)
     res_d = algo.run_dscale( dem, wse, method)
     
     #validate
@@ -53,12 +59,14 @@ def test_runner(dem,wse,   method, output_params, context, feedback, wbt_init):
     #todo: add quantiative validation
     
 
-
+#===============================================================================
+# CostGrow-------
+#===============================================================================
   
 @pytest.mark.parametrize('caseName',['Ahr2021'])
 def test_costdistance(wse_fp,  context, feedback, wbt_init):
     """CostDistance WBT extrapolation test""" 
-    print('stdout?')
+ 
     #setup
     algo =  Dscale()
     algo.initAlgorithm()
@@ -70,34 +78,72 @@ def test_costdistance(wse_fp,  context, feedback, wbt_init):
     algo._costdistance(wse_fp )
 
 
-@pytest.mark.dev 
+tdir = lambda x: os.path.join(test_data_dir2, 'test_filter_isolated', x)
+
+
+
+@pytest.mark.parametrize('wse_fp, wse_raw_fp',[(tdir('05bdem_mask.tif'), tdir('wse_raw.tif'))])
 @pytest.mark.parametrize('method',[
-    #'Resample',
-    #'TerrainFilter',
+    'area', 
+    #'pixel',
+    ])
+@pytest.mark.parametrize('clump_cnt', [3])
+def test_filter_isolated(wse_fp, wse_raw_fp, method,  clump_cnt, 
+                         context, feedback, wbt_init):
+    
+    #setup
+    algo =  Dscale()
+    algo.initAlgorithm()
+    algo._init_algo({}, context, feedback) 
+    
+
+    
+    #execute    
+    algo._filter_isolated(wse_fp, wse_raw_fp=wse_raw_fp, method=method, clump_cnt=clump_cnt)
+    
+
+
+#===============================================================================
+# ISSUES----
+#===============================================================================
+idir = lambda x: os.path.join(src_dir, 'issues', x)
+
+@pytest.mark.dev
+@pytest.mark.parametrize('method',[
+    'Resample',
+    'TerrainFilter',
     'CostGrow',    
     ])
 @pytest.mark.parametrize('fp_d',
                           [
-                              {'dem':r'l:\10_IO\FloodRescaler\issues\05\Final_DEM.tif',
-                               'wse':r'l:\10_IO\FloodRescaler\issues\05\Final_WSE.tif'
-                               }
+                              #isusue5
+                              #{'dem':idir(r'05\Final_DEM.tif'),'wse':idir(r'05\Final_WSE.tif')},
+                              
+                              #issue13: filter_isolated
+                              {'dem':idir(r'13\input_1.tif'),'wse':idir(r'13\input_2.tif')}
                           ]
                           )
-def test_issues(fp_d, method, output_params, context, feedback, wbt_init):
+def test_issues(fp_d, method, output_params, context, feedback, wbt_init, tmpdir):
     """method for debugging tests""" 
     print('testing issues')
     
     #execute
     algo=Dscale()
     algo.initAlgorithm()
-    algo._init_algo(output_params, context, feedback)
+    algo._init_algo(output_params, context, feedback, temp_dir=tmpdir)
     res_d = algo.run_dscale( 
         get_qrlay(fp_d['dem']),
         get_qrlay(fp_d['wse']), 
         method)
     
     print(f'temporary directory:\n  {algo.temp_dir}')
+    print(f'OUTPUT_WSE:\n    %s'%res_d['OUTPUT_WSE'])
     
     #validate
     assert isinstance(res_d, dict)
     assert set(res_d.keys()).symmetric_difference(output_params.keys())==set()
+    
+    assert os.path.exists(res_d['OUTPUT_WSE'])
+    
+    
+    
