@@ -81,7 +81,7 @@ class Dscale(QgsProcessingAlgorithm):
         Returns the translated algorithm name, which should be used for any
         user-visible display of the algorithm name.
         """
-        return self.tr('Downscaling WSE')
+        return self.tr('Resolution Enhancer (WSE)')
 
     def group(self):
         """
