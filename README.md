@@ -2,9 +2,16 @@
 
 [![DOI](https://zenodo.org/badge/547351392.svg)](https://zenodo.org/badge/latestdoi/547351392)
 
-QGIS Processing scripts for rescaling flood hazard rasters that includes the following tools:
-- Resolution enhancement (i.e., Downscaling): Three methods for interpolating a high resolution WSE grid using a high resolution DEM and simple hydraulic assumptions described in [Bryant et. al., (2022)](https://hess.copernicus.org/preprints/hess-2023-156/). For more advanced applications and features, see the [FloodDownscaler2](https://github.com/cefect/FloodDownscaler2) project.
-- Aggregation via Averaging: Two methods for coarsening flood hazard grids described in [Bryant et. al., (2022)](https://doi.org/10.1029/2023WR035100)
+QGIS Processing scripts for rescaling or changing the resolution of flood hazard rasters.
+
+## UPDATES
+-**2024 01 19**: new *pixel* based isolated filter for the *Resolution Enhancer* tool
+
+
+## Description
+Includes the following tools:
+- **Resolution Enhancer (WSE)**: Three methods for interpolating a high resolution WSE grid using a high resolution DEM and simple hydraulic assumptions described in [Bryant et. al., (2022)](https://hess.copernicus.org/preprints/hess-2023-156/). For more advanced applications and features, see the [FloodDownscaler2](https://github.com/cefect/FloodDownscaler2) project.
+- **Aggregation via Averaging**: Two methods for coarsening flood hazard grids described in [Bryant et. al., (2022)](https://doi.org/10.1029/2023WR035100)
 
 
 The algorithms are tested against QGIS 3.28.11 and require [WhiteboxTools for QGIS plugin](https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html).
@@ -48,7 +55,7 @@ If you use these tools for your work, please cite the following:
 ```
 
 
-### Downscaling
+### Resolution Enhancement
 
 ```
 @article{bryant_resolution_2023,

@@ -56,7 +56,7 @@ class MyFeedBackQ(QgsProcessingFeedback):
         super().__init__(*args, **kwargs)
         
     def pushInfo(self, msg):
-        print(msg)
+        #print(msg)
         self.logger.info(msg)
         
     def pushDebugInfo(self, msg):
@@ -118,6 +118,7 @@ def wsh(caseName, qproj):
 @pytest.fixture(scope='function')
 @clean_qgis_layer
 def wse(caseName, qproj):
+    """loads the wse from teh test_data_dir (examples)"""
     return get_rlay(caseName, 'wse')
 
 

@@ -10,8 +10,9 @@
 *                                                                         *
 ***************************************************************************
 """
-__version__ = '2023.11.29'
+__version__ = '2024.01.19'
 import pprint, os, datetime, tempfile
+#from osgeo import gdal
 from qgis import processing
 from qgis.PyQt.QtCore import QCoreApplication
 from qgis.core import (QgsProcessing,
@@ -22,11 +23,14 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingParameterRasterDestination,
                        QgsProcessingParameterNumber,
                        QgsProcessingParameterString,
-                       QgsRasterLayer ,
+                       QgsRasterLayer,
                        QgsCoordinateTransformContext,
                        QgsMapLayerStore,
                        QgsProcessingOutputLayerDefinition,
-                       QgsProject
+                       QgsProject,
+                       QgsProcessingFeatureSourceDefinition,
+                       QgsFeatureRequest,
+                       QgsVectorLayer,
  
                        )
 
@@ -50,9 +54,14 @@ class Dscale(QgsProcessingAlgorithm):
  
     INPUT_METHOD = 'INPUT_METH'
     
-    #outputs
- 
+    #outputs 
     OUTPUT_WSE = 'OUTPUT_WSE'
+    
+    
+    #parameters
+    cg_isolated_methods_l = ['area', 'pixel']
+    INPUT_CG_ISO_clump_cnt='INPUT_CG_ISO_clump_cnt'
+    INPUT_CG_ISO_METHOD='INPUT_CG_ISO_METHOD'
  
     
     
@@ -112,6 +121,13 @@ class Dscale(QgsProcessingAlgorithm):
                 <li><strong>CostGrow</strong>: [WW+WP+DP]: as in 'TerrainFilter' followed by a cost distance routine to grow the inundation and an isolated flooding filter.</li>
             </ul>
             <p>CostGrow requires the <strong>WhiteboxTools for QGIS</strong> plugin to be installed and configured (<a href="https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html">https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html</a>)</p>
+            
+            <p>CostGrow's 'isolated flooding' filter is used to select the result WSE clump from the cost distance map. Two methods are available for this:</p>
+            <ul>
+                <li><strong>area</strong>: the n='selection count' clumps with largest area are selected (faster, may be inaccurate for large complex domains)</li>
+                <li><strong>pixel</strong>: those clumps overlapping the original coarse WSE are included (slower, more accurate) </li>
+            </ul>
+            
 
             <h3>Tips and Tricks</h3>
             The WSE and DEM grids need to have the same extent
@@ -128,26 +144,7 @@ class Dscale(QgsProcessingAlgorithm):
             """
 
         )
-        # """return the help string by loading from an HTML file"""
-        
-        # #get the filepath
-        # fp = os.path.join(descriptions_dir, self.name()+'.html')
-        
-        # #load the html description file
-        # with open(fp, 'r') as file:
-        #     return self.tr(file.read())
-
-
-        # return self.tr(
-        #     """Downscaling coarse WSE to a finer resolution with methods described in Bryant et. al., (2023) [10.5194/hess-2023-156] which apply simple hydraulic assumptions and a fine resolution DEM.
-        #     Three methods are provided with varying treatment of the three resample cases (wet-wet (WW), wet-partial (WP), and dry-partial (DP)):
-        #     \'Resample\': [WW] simple bilinear resampling (e.g., gdal_warp)
-        #     \'TerrainFilter\': [WW+WP]: bilinear resampling followed by a terrain filter
-        #     \'CostGrow\': [WW+WP+DP]: as in \'TerrainFilter\' followed by a cost distance routine to grow the inundation and an isolated flooding filter. 
-            
-        
-        # \'CostGrow\' requires the \'WhiteboxTools for QGIS\' plugin to be installed and configured (https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html)
-        #     """)
+ 
 
     def initAlgorithm(self, config=None):
         """
@@ -172,26 +169,43 @@ class Dscale(QgsProcessingAlgorithm):
         # raster layers
         #=======================================================================
         self.addParameter(
-            QgsProcessingParameterRasterLayer(self.INPUT_DEM, self.tr('DEM s1'))
+            QgsProcessingParameterRasterLayer(self.INPUT_DEM, self.tr('DEM (fine)'))
         )
         
         self.addParameter(
-            QgsProcessingParameterRasterLayer(self.INPUT_WSE, self.tr('WSE s2'))
+            QgsProcessingParameterRasterLayer(self.INPUT_WSE, self.tr('WSE (coarse)'))
         )
                 
  
         
         #=======================================================================
         # pars
-        #======================================================================= 
- 
-        
+        #=======================================================================        
         # add methods parameter with some hints
         param = QgsProcessingParameterString(self.INPUT_METHOD, 
                                              self.tr('downscaling method'), 
                                              defaultValue='Resample', multiLine=False)
         
         param.setMetadata({'widget_wrapper':{ 'value_hints': list(self.methods_d.keys()) }})
+        self.addParameter(param)
+        
+        
+        #CostGrow._filter_isolated.methods
+        param = QgsProcessingParameterString(self.INPUT_CG_ISO_METHOD, 
+                                             self.tr('CostGrow: isolated filter: method'), 
+                                             defaultValue=self.cg_isolated_methods_l[0], 
+                                             optional=True,
+                                             multiLine=False)
+        
+        param.setMetadata({'widget_wrapper':{ 'value_hints':self.cg_isolated_methods_l }})
+        self.addParameter(param)
+        
+        #CostGrow._filter_isolated.clump_cnt
+        param = QgsProcessingParameterNumber(self.INPUT_CG_ISO_clump_cnt, 
+                                             self.tr('CostGrow: isolated filter: method=\'area\': selection count'), 
+                                             defaultValue=1, optional=True,
+                                             type=QgsProcessingParameterNumber.Integer)
+        
         self.addParameter(param)
         
         #=======================================================================
@@ -242,10 +256,20 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         # params
         #=======================================================================
-        mName = self.parameterAsString(params, self.INPUT_METHOD, context)
+        method = self.parameterAsString(params, self.INPUT_METHOD, context)
+        kwargs = dict()
+        
+        if method=='CostGrow':
+            kwargs['filter_isolated_kwargs'] = dict(
+                clump_cnt = self.parameterAsInt(params, self.INPUT_CG_ISO_clump_cnt, context),
+                method = self.parameterAsString(params, self.INPUT_CG_ISO_METHOD, context)
+                )
+
+            
+            
  
         
-        feedback.pushInfo(f'running with \'{mName}\'') 
+        feedback.pushInfo(f'running with \'{method}\'\n{kwargs}') 
         
         if feedback.isCanceled():
             return {}
@@ -254,15 +278,24 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================.
  
  
-        return self.run_dscale(input_dem, input_wse, mName, 
+        return self.run_dscale(input_dem, input_wse, method, 
                                #context=context, feedback=feedback,
-                               **params)
+                               **params, **kwargs)
         
-    def _init_algo(self, params, context, feedback):
+    def _init_algo(self, params, context, feedback,
+                   temp_dir=None,
+                   ):
         """common init for tests"""
         self.proc_kwargs = dict(feedback=feedback, context=context, is_child_algorithm=True)
         self.context, self.feedback, self.params = context, feedback, params
-        self.temp_dir=tempfile.TemporaryDirectory()
+        
+        if temp_dir is None:
+            temp_dir = os.path.join(tempfile.TemporaryDirectory().name, 'dscale')
+            
+        if not os.path.exists(temp_dir):os.makedirs(temp_dir)
+        self.temp_dir=temp_dir
+        
+        self.logger = log(feedback=feedback)
 
         
         
@@ -327,7 +360,7 @@ class Dscale(QgsProcessingAlgorithm):
         #wrap
         #=======================================================================
 
-        feedback.pushInfo(f'finished with temp_dir\n    {self.temp_dir.name}')
+        feedback.pushInfo(f'finished with temp_dir\n    {self.temp_dir}')
 
 
         return result
@@ -388,7 +421,9 @@ class Dscale(QgsProcessingAlgorithm):
         
         
         
-    def run_CostGrow(self, dem, wse, **kwargs):
+    def run_CostGrow(self, dem, wse, 
+                     filter_isolated_kwargs=dict(),
+                     **kwargs):
         """costGrow"""
         
         downscale=self.downscale
@@ -397,33 +432,38 @@ class Dscale(QgsProcessingAlgorithm):
         #=======================================================================
         # 01resample 
         #======================================================================= 
-        feedback.pushInfo(f'\n\nresample w/ downscale={downscale:.2f}==============================================')       
-        wse2_fp = self._gdal_warp(wse, downscale, OUTPUT=os.path.join(self.temp_dir.name, '01resample.tif')) 
+        feedback.pushInfo(f'\n\nresample w/ downscale={downscale:.2f} \n==============================================')       
+        wse2_fp = self._gdal_warp(wse, downscale, OUTPUT=os.path.join(self.temp_dir, '01resample.tif')) 
         
         if feedback.isCanceled():
             return {} 
         #=======================================================================
         # 02filter
         #=======================================================================
-        feedback.pushInfo('\n\nDEM filter 1==============================================')  
+        feedback.pushInfo('\n\nDEM filter 1 \n==============================================')  
         wse3_fp = self._dem_filter(dem, wse2_fp,
-                                   OUTPUT=os.path.join(self.temp_dir.name, '02dem_filter2.tif'),
+                                   OUTPUT=os.path.join(self.temp_dir, '02dem_filter2.tif'),
                                    )
         
         #=======================================================================
         # 03costDistanceGrow_wbt
         #=======================================================================
-        feedback.pushInfo('\n\ncostdistance extrapolation==============================================') 
+        feedback.pushInfo('\n\ncostdistance extrapolation \n==============================================') 
         wse4_fp = self._costdistance(wse3_fp,
-                                     OUTPUT=os.path.join(self.temp_dir.name, '03costdistance.tif'),
+                                     OUTPUT=os.path.join(self.temp_dir, '03costdistance.tif'),
                                      )
+        
+        #=======================================================================
+        # DECAY
+        #=======================================================================
+        """placeholder"""
         
         #=======================================================================
         # 04DEM filter again
         #=======================================================================
         feedback.pushInfo('\n\nDEM filter 2==============================================') 
         wse5_fp = self._dem_filter(dem, wse4_fp, 
-                                   OUTPUT=os.path.join(self.temp_dir.name, '04dem_filter2.tif')
+                                   OUTPUT=os.path.join(self.temp_dir, '04dem_filter2.tif')
                                    )
         
 
@@ -434,29 +474,83 @@ class Dscale(QgsProcessingAlgorithm):
                 'INPUT_B':dem, 'BAND_B':1, 
                 #'FORMULA' : '(A!=0)/(A!=0)',
                 'NO_DATA':0.0, 
-                'OUTPUT':os.path.join(self.temp_dir.name, '05bdem_mask.tif'), 
+                'OUTPUT':os.path.join(self.temp_dir, '05bdem_mask.tif'), 
                 'RTYPE':5})
         
         #=======================================================================
         # 05isolated filter
         #=======================================================================
-        feedback.pushInfo('\n\nisolated filter==============================================')
-        ofp= self._filter_isolated(wse6_fp, OUTPUT=self._get_out(self.OUTPUT_WSE))
+        feedback.pushInfo('\n\nisolated filter \n==============================================')
+        ofp= self._filter_isolated(wse6_fp, OUTPUT=self._get_out(self.OUTPUT_WSE), wse_raw = wse,
+                                   **filter_isolated_kwargs)
         
+        assert os.path.exists(ofp)
         
         #=======================================================================
         # wrap
         #=======================================================================
+        feedback.pushDebugInfo(f'finished on \n    {ofp}')
         return {self.OUTPUT_WSE:ofp}
         
-    def _filter_isolated(self, wse_fp, OUTPUT='TEMPORARY_OUTPUT', **kwargs):
-        """remove isolated cells from grid using WBT"""
+
+    def _get_mask_of_clumps(self, tfp, clump_fp, clump_ids):
+        """get a mask from specified pixel values"""
+        #reclassify to pull out good values
+        reclass_vals = ';'.join([f'9999.0;{e}' for e in clump_ids])
+        reclass_fp = processing.run('wbt:Reclass', {'assign_mode':True, 'input':clump_fp, 'output':tfp('03_clumpReclassify'), 'reclass_vals':reclass_vals}, **self.proc_kwargs)['output']
+        
+ 
+        clump_mask_fp = self._gdal_calc({'FORMULA':f'A==9999.0', 
+                'INPUT_A':reclass_fp, 'BAND_A':1, 'NO_DATA':0, 'RTYPE':5, 
+                'OUTPUT':tfp('03_clumpMask')})
+        
+        return clump_mask_fp
+
+    def _filter_isolated(self, wse_fp,
+                         clump_cnt=1,
+                        method='area',
+                         min_pixel_frac=0.01,
+                         wse_raw=None,                         
+                         OUTPUT='TEMPORARY_OUTPUT', 
+                         **kwargs):
+        """remove isolated cells from grid using WBT
+        
+        
+        Params
+        -------
+        wse_fp: str
+            filepath to fine resolution WSE on which to apply the isolated filter
+            
+        clump_cnt: int
+            number of clumps to select
+        
+        method: str
+            method for selecting isolated flood groups:
+            'area': take the n=clump_cnt largest areas (fast, only one implemented in FloodRescaler)
+            'pixel': use polygons and points to select the groups of interest
+            
+            
+        min_pixel_frac: float
+            for method='pixel', the minimum fraction of total domain pixels allowed for the clump search
+            
+        wse_raw: str
+            for method='pixel', raw WSE from which to get intersect points
+            ideally the raw coarse WSE input
+            see note below on resampling
+        
+        """
+        #=======================================================================
+        # setup
+        #=======================================================================
         feedback=self.feedback
-        temp_dir = os.path.join(self.temp_dir.name, 'filter_isolated')
+        temp_dir = os.path.join(self.temp_dir, 'filter_isolated')
         if not os.path.exists(temp_dir):
             os.makedirs(temp_dir)
 
-        tfp =lambda x:self._tfp(prefix=x, dir=temp_dir)
+        tfp =lambda x:self._tfp(prefix=x, dir=temp_dir) #get temporary file
+        
+        log = self.logger
+                
  
         #=======================================================================
         # #convert to mask
@@ -492,19 +586,112 @@ class Dscale(QgsProcessingAlgorithm):
                         'OUTPUT_TABLE' : self._tfp(dir=temp_dir, suffix='.csv') }, **self.proc_kwargs)['OUTPUT_TABLE']
 
                         
-        df = pd.read_csv(unique_fp).sort_values('count', ascending=False)
-        assert df['value'].min()>0.0, f'failed to filter zerodata'
-        ser = df.iloc[0, :]#take largest
-        assert ser['count']>0
-        max_clump_id = ser['value']
+        clump_df = pd.read_csv(unique_fp).sort_values('count', ascending=False)
+        assert clump_df['value'].min()>0.0, f'failed to filter zerodata'
+        #=======================================================================
+        # ser = df.iloc[0, :]#take largest
+        # assert ser['count']>0
+        # max_clump_id = ser['value']
+        #=======================================================================
+        
+        #===================================================================
+        # area-based selection-----
+        #===================================================================
+        feedback.pushInfo(f'clump selection method \'{method}\'')
+ 
+        if method == 'area':
+            feedback.pushInfo(f'area-based selecting {clump_cnt}/{len(clump_df)} clumps')            
+            clump_ids = clump_df.iloc[0:clump_cnt, 0].values
         
         
         
-        #build mask of this (1= main clump, 0=not)
-        feedback.pushInfo(f'\nidentified largest clump {max_clump_id}\n{ser.to_dict()}\nbuilding mask')
-        clump_mask_fp = self._gdal_calc({'FORMULA':f'A=={int(max_clump_id)}', 
-                                         'INPUT_A':clump_fp, 'BAND_A':1,'NO_DATA':0,'RTYPE':5, 
-                                         'OUTPUT':tfp('03_clumpMask')})
+        #=======================================================================
+        # pixel-based selection-------
+        #=======================================================================
+        elif method=='pixel':
+            assert isinstance(wse_raw, QgsRasterLayer), 'for method=pixel must pass wse_raw'
+ 
+            log.debug(f'filtering clumps w/ min_pixel_frac={min_pixel_frac}')
+ 
+            #===================================================================
+            # drop some small clumps
+            #===================================================================
+            """because polygnoizing is very slow... want to drop any super small groups"""
+            #select using 100 or some fraction
+            bx = clump_df['count']>min(min_pixel_frac*clump_df['count'].sum(), 100)
+ 
+            
+            log.debug(f'pre-selected {bx.sum()}/{len(bx)} clumps for pixel selection')
+            
+            # build a mask of this
+            mask_large_clumps = self._get_mask_of_clumps(tfp, clump_fp, clump_df[bx].iloc[:,0].values)
+            
+            #apply it to the clumps
+            clump_major_fp = self._gdal_calc({'FORMULA':f'A*B', 
+                                'INPUT_A':clump_fp2, 'BAND_A':1,
+                                'INPUT_B':mask_large_clumps, 'BAND_B':1,
+                                'NO_DATA':0,'RTYPE':5, 'OUTPUT':tfp('03_clumpsMajor_')})
+            
+            log.debug(f'wrote major clumps to \n    {clump_major_fp}')
+            
+            #===================================================================
+            # polygonize clumps
+            #===================================================================            
+            clump_vlay_fp = processing.run('gdal:polygonize', 
+                                 { 'BAND' : 1, 'EIGHT_CONNECTEDNESS' : True, 
+                                  'EXTRA' : '', 'FIELD' : 'clump_id', 
+                                  'INPUT' : clump_major_fp, 
+                                  'OUTPUT' : self._tfp(prefix='03_clumpPoly_', dir=temp_dir, suffix='.shp') },
+                                 **self.proc_kwargs)['OUTPUT']
+            
+ 
+            log.debug(f'vectorized clumps to \n    {clump_vlay_fp}')
+ 
+            #===================================================================
+            # intersect of clumps and wse coarse
+            #===================================================================
+            """NOTE: could speed things up by coarsening this
+            could make more accurate by using polygons (poly v poly intersect)
+            """
+            #get coarse points
+            wse_raw_pts = processing.run('wbt:RasterToVectorPoints', 
+                      { 'input' : wse_raw, 'output' : self._tfp(prefix='04_rawWsePoints', dir=temp_dir, suffix='.shp') }, 
+                                  **self.proc_kwargs)['output']
+ 
+            
+            #select intersecting new polygons 
+            clump_vlay_sel_fp = processing.run('native:extractbylocation', 
+                                 { 'INPUT' : clump_vlay_fp, 'INTERSECT' : wse_raw_pts, 
+                                  'OUTPUT' : tfp('05_clumpPolySelected_'), 'PREDICATE' : [0] },
+                                  **self.proc_kwargs)['OUTPUT']
+            
+
+            
+            #list selection
+            uqv_s = processing.run('qgis:listuniquevalues', 
+                                  { 'FIELDS' : ['clump_id'],
+                                    'INPUT' : QgsProcessingFeatureSourceDefinition(clump_vlay_sel_fp, 
+                                                                                   selectedFeaturesOnly=False, 
+                                                                                   featureLimit=-1, 
+                                                                                   geometryCheck=QgsFeatureRequest.GeometryAbortOnInvalid), 
+                                   'OUTPUT' : 'TEMPORARY_OUTPUT', 'OUTPUT_HTML_FILE' : 'TEMPORARY_OUTPUT' },
+                                  **self.proc_kwargs)['UNIQUE_VALUES']
+            
+            assert len(uqv_s)>0, f'failed to get any unique polygons during clump selection'
+            clump_ids = list(map(int, uqv_s.split(';')))
+ 
+            log.debug(f'selected {len(clump_ids)}/{len(clump_df)} clumps by pixel intersect w/ {wse_raw}')
+            
+            
+        else:
+            raise KeyError(method)
+        
+        #=======================================================================
+        # #build mask of this (1= main clump, 0=not)
+        #=======================================================================
+        feedback.pushInfo(f'\nidentified {len(clump_ids)} clumps\nbuilding mask')
+        
+        clump_mask_fp = self._get_mask_of_clumps(tfp, clump_fp, clump_ids)
         
         #apply clump filter
         feedback.pushInfo(f'\napplying clump filter from mask on WSE:\n    mask:{clump_mask_fp}\n    wse:{wse_fp}')
@@ -615,7 +802,7 @@ class Dscale(QgsProcessingAlgorithm):
         return self._gdal_calc({'FORMULA':'A/A', 'INPUT_A':rlay, 'BAND_A':1,'NO_DATA':-9999,'OUTPUT':OUTPUT, 'RTYPE':5})
 
     def _tfp(self, prefix=None, suffix='.tif', dir=None):
-        if dir is None: dir=self.temp_dir.name
+        if dir is None: dir=self.temp_dir
         return tempfile.NamedTemporaryFile(suffix=suffix,prefix=prefix, dir=dir).name
         
  
@@ -647,6 +834,34 @@ def get_resolution_ratio(
 def rlay_get_resolution(rlay):
     
     return (rlay.rasterUnitsPerPixelY() + rlay.rasterUnitsPerPixelX())*0.5
+
+#===============================================================================
+# def gdal_get_array(rasterPath):
+#  
+#     
+#     # Open the raster file
+#     ds = gdal.Open(rasterPath)
+#     
+#     # Get the raster band (as an example, getting the first band of the raster)
+#     band1 = ds.GetRasterBand(1)
+#     
+#     # Read the band as a numpy array
+#     array1 = band1.ReadAsArray()
+#     
+#     del ds
+#     
+#     return array1
+#===============================================================================
+
+class log(object):
+    """log emulator"""
+    def __init__(self, feedback):
+        self.feedback=feedback
+    def debug(self, msg):
+        self.feedback.pushDebugInfo(msg)
+    def info(self, msg):
+        self.feedback.pushInfo(msg)
+
 def assert_extent_equal(left, right, msg='',): 
     """ extents check"""
  
