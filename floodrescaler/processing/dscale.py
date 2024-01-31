@@ -125,7 +125,7 @@ class Dscale(QgsProcessingAlgorithm):
             <p>CostGrow's 'isolated flooding' filter is used to select the result WSE clump from the cost distance map. Two methods are available for this:</p>
             <ul>
                 <li><strong>area</strong>: the n='selection count' clumps with largest area are selected (faster, may be inaccurate for large complex domains)</li>
-                <li><strong>pixel</strong>: those clumps overlapping the original coarse WSE are included (slower, more accurate) </li>
+                <li><strong>pixel</strong>: those clumps overlapping the original coarse WSE pixel centroids are included (slower, more accurate) </li>
             </ul>
             
 
