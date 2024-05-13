@@ -33,14 +33,14 @@ def output_params(qproj):
 @pytest.mark.parametrize('scale',[2, 
                                   #2.0, 2.1
                                   ])
-def test_filter(dem, wsh, wse, scale, output_params, context, feedback):
+def test_filter(dem_layer, wsh_layer, wse_layer, scale, output_params, context, feedback):
  
-    assert isinstance(dem, QgsRasterLayer)
+    assert isinstance(dem_layer, QgsRasterLayer)
     #execute
     #with AggAverage() as algo:
     algo=AggAverage()
     algo.initAlgorithm()
-    res_d = algo.agg_filter(output_params, dem, wsh, wse, scale, context, feedback)
+    res_d = algo.agg_filter(output_params, dem_layer, wsh_layer, wse_layer, scale, context, feedback)
     
     #validate
     assert isinstance(res_d, dict)
@@ -51,14 +51,14 @@ def test_filter(dem, wsh, wse, scale, output_params, context, feedback):
 @pytest.mark.parametrize('scale',[2, 
                                   #2.0, 2.1
                                   ])
-def test_direct(dem, wsh, wse, scale, output_params, context, feedback):
+def test_direct(dem_layer, wsh_layer, wse_layer, scale, output_params, context, feedback):
  
-    assert isinstance(dem, QgsRasterLayer)
+    assert isinstance(dem_layer, QgsRasterLayer)
     #execute
     #with AggAverage() as algo:
     algo=AggAverage()
     algo.initAlgorithm()
-    res_d = algo.agg_direct(output_params, dem, wsh, wse, scale, context, feedback)
+    res_d = algo.agg_direct(output_params, dem_layer, wsh_layer, wse_layer, scale, context, feedback)
     
     #validate
     assert isinstance(res_d, dict)

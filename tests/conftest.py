@@ -7,7 +7,7 @@ Created on Oct. 24, 2022
 # IMPORTS------
 #===============================================================================
 import os, pathlib, pytest, logging, sys
-from pytest_qgis.utils import clean_qgis_layer
+#from pytest_qgis.utils import clean_qgis_layer
 from qgis.core import (
     QgsRasterLayer, QgsProject, QgsProcessingFeedback, QgsProcessingContext, Qgis, QgsSettings, QgsApplication
     )
@@ -105,19 +105,19 @@ def context(qproj):
     return QgsProcessingContext()
  
 @pytest.fixture(scope='function')
-@clean_qgis_layer
-def dem(caseName, qproj):
+#@clean_qgis_layer
+def dem_layer(caseName, qproj):
     return get_rlay(caseName, 'dem')
 
 @pytest.fixture(scope='function')
-@clean_qgis_layer
-def wsh(caseName, qproj):
+#@clean_qgis_layer
+def wsh_layer(caseName, qproj):
     return get_rlay(caseName, 'wsh')
 
 
 @pytest.fixture(scope='function')
-@clean_qgis_layer
-def wse(caseName, qproj):
+#@clean_qgis_layer
+def wse_layer(caseName, qproj):
     """loads the wse from teh test_data_dir (examples)"""
     return get_rlay(caseName, 'wse')
 

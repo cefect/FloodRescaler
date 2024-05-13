@@ -4,6 +4,8 @@
 
 QGIS Processing scripts for rescaling or changing the resolution of flood hazard rasters.
 
+Tested against QGIS 3.34.5
+
 ## UPDATES
 -**2024 01 19**: new *pixel* based isolated filter for the *Resolution Enhancer* tool
 
