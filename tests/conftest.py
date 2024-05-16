@@ -61,9 +61,12 @@ class MyFeedBackQ(QgsProcessingFeedback):
         
     def pushDebugInfo(self, msg):
         self.logger.debug(msg)
+        
+    def pushWarning(self, msg):
+        self.logger.warning(msg)
     
 #===============================================================================
-# fixtures
+# fixtures---------
 #===============================================================================
 
 @pytest.fixture(scope='session')
@@ -104,10 +107,38 @@ def feedback(qproj, logger):
 def context(qproj):
     return QgsProcessingContext()
  
+@pytest.fixture(scope='session')
+def wbt_init(qgis_app, qgis_processing):
+    """initilze the WhiteBoxTools processing provider"""
+    
+    #load the provider
+    from wbt_for_qgis.wbtprovider import WbtProvider #be sure to add the profile folder to sys.path
+    whitebox_provider = WbtProvider()
+    
+    #add to the registry
+    assert qgis_app.processingRegistry().addProvider(whitebox_provider)
+    
+    #add the exe setting
+    from processing.core.ProcessingConfig import ProcessingConfig
+    wbt_exe = r'l:\06_SOFT\whitebox\v2.2.0\whitebox_tools.exe'    
+    ProcessingConfig.setSettingValue('WBT_EXECUTABLE', wbt_exe)
+    
+    return whitebox_provider #needs to be held somewhere
+    
+ 
+ 
+#===============================================================================
+# FIXTURES.LAYERS------------
+#===============================================================================
 @pytest.fixture(scope='function')
 #@clean_qgis_layer
 def dem_layer(caseName, qproj):
     return get_rlay(caseName, 'dem')
+
+@pytest.fixture(scope='function')
+#@clean_qgis_layer
+def dem_coarse_layer(caseName, qproj):
+    return get_rlay(caseName, 'dem_coarse')
 
 @pytest.fixture(scope='function')
 #@clean_qgis_layer
@@ -131,23 +162,5 @@ def wse_fp(caseName):
     return fp
 
 
-@pytest.fixture(scope='session')
-def wbt_init(qgis_app, qgis_processing):
-    """initilze the WhiteBoxTools processing provider"""
-    
-    #load the provider
-    from wbt_for_qgis.wbtprovider import WbtProvider #be sure to add the profile folder to sys.path
-    whitebox_provider = WbtProvider()
-    
-    #add to the registry
-    assert qgis_app.processingRegistry().addProvider(whitebox_provider)
-    
-    #add the exe setting
-    from processing.core.ProcessingConfig import ProcessingConfig
-    wbt_exe = r'l:\06_SOFT\whitebox\v2.2.0\whitebox_tools.exe'    
-    ProcessingConfig.setSettingValue('WBT_EXECUTABLE', wbt_exe)
-    
-    return whitebox_provider #needs to be held somewhere
-    
- 
+
     
