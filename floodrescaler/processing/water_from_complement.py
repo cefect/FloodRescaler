@@ -37,6 +37,8 @@ from qgis.core import (QgsProcessing,
 from qgis.analysis import QgsNativeAlgorithms, QgsRasterCalculatorEntry, QgsRasterCalculator
 
 import pandas as pd
+import numpy as np
+from osgeo import gdal
 
  
 class WaterFromComp(QgsProcessingAlgorithm):
@@ -108,7 +110,23 @@ class WaterFromComp(QgsProcessingAlgorithm):
 
         return self.tr(
             """
-            Create either a WSH or WSE grid from the DEM and the complement
+            <p>Two tools to generate a Water Surface Elevation (WSE) or Water Surface Height (WSH) grid from its complement and a DEM. 
+            Useful for pre-processing other tools.</p>
+            <ul>
+                <li><strong>WSH to WSE</strong>: Add the WSH to the DEM and mask zeros</li>
+                <li><strong>WSE to WSH</strong>: Subtract the DEM from the WSE and set masked values to zero </li>
+            </ul>
+            
+            <h3>Tips and Tricks and Notes</h3>
+            Grids need to have identical Geospatial attributes (e.g., extents and shape match)
+            Inputs (and outputs) adopt dry=null for WSE and dry=0 for WSH grids
+            DEM and Input grids are assumed to be hydraulically consistent (i.e., the same DEM was used to generate the Input)
+            
+            <h3>Issues and Updates</h3>
+            See the <a href="https://github.com/cefect/FloodRescaler">project repository</a> for updates, to post an issue/question, or to request new features.
+
+            <h3>Attribution</h3>
+            If you use these tools for your work, please cite <a href="https://doi.org/10.1029/2023WR035100">Bryant et. al., (2023)</a>
             """
 
         )
@@ -224,7 +242,7 @@ class WaterFromComp(QgsProcessingAlgorithm):
                                **params, **kwargs)
         
     def run_water_grid_convert(self, dem_rlay, water_rlay, water_type,
-                               ):
+                               **params):
         
         """convert from WSE or WSH using the DEM"""
         
@@ -258,7 +276,7 @@ class WaterFromComp(QgsProcessingAlgorithm):
         
         result = func(water_rlay, dem_rlay, **skwargs)
         
-        return result
+        return {self.OUTPUT_WATER:result}
         
     def wse_to_wsh(self, wse_rlay, dem_rlay, 
                    OUTPUT='TEMPORARY_OUTPUT'):
@@ -273,6 +291,11 @@ class WaterFromComp(QgsProcessingAlgorithm):
         #cf_kwargs = dict(context=self.context, feedback=f) 
         
         f.pushInfo('\ncomputing WSH from WSE\n=========================\n\n')
+        
+        #=======================================================================
+        # check WSE expectations
+        #=======================================================================
+        assert getNoDataCount(wse_rlay.source())>0, f'WSE is expected to contain some nulls (dry cells)'
         
         #=======================================================================
         # #get raw delta
@@ -303,15 +326,18 @@ class WaterFromComp(QgsProcessingAlgorithm):
         
         f.pushInfo(f'WSH grid computed w/\n%s'%{'%.2f'%stats_d[k] for k in ['MAX', 'MEAN', 'MIN', 'SUM']})
         
-        if not stats_d['MIN']==0:
+        if not stats_d['MIN']==0:            
+            f.pushWarning('returned a WSH with min!=0.\nYour DEM and WSE may be inconsistent')
             
-            f.pushWarning('returned a WSH with min!=0')
+        if stats_d['MAX']>99:
+            f.pushWarning('WSH result has an unexpectedly high max')
         
         return OUTPUT
             
         
         
-    def wsh_to_wse(self, wsh_ar, dem_ar):
+    def wsh_to_wse(self, wsh_rlay, dem_rlay, 
+                   OUTPUT='TEMPORARY_OUTPUT'):
         """convert WSH to WSE
         
         wse_mar = ma.array(wsh_mar.data+dem_mar.data,mask = np.logical_or(wsh_mar.mask, dem_mar.mask), 
@@ -325,6 +351,50 @@ class WaterFromComp(QgsProcessingAlgorithm):
         
         f.pushInfo('\ncomputing WSE from WSH\n=========================\n\n')
         
+        #=======================================================================
+        # check WSH meets expectations
+        #=======================================================================
+        stats_d = self._rasterlayerstatistics(wsh_rlay)
+        assert stats_d['MIN']==0, f'WSH layer must have a minimum of zero (negative depths not supported)'
+        
+        #=======================================================================
+        # add
+        #=======================================================================
+        delta_fp = self._gdal_calc({ 
+            'INPUT_A' : wsh_rlay, 'BAND_A' : 1, 'INPUT_B' : dem_rlay, 'BAND_B' : 1, 
+            'FORMULA':'A+B',            
+            'NO_DATA' : -9999,  'OUTPUT' : tfp('delta_'), 'RTYPE' : 5, 
+                   })
+        f.pushInfo(f'\n\ncomputed delta\n    {delta_fp}')
+        #=======================================================================
+        # mask
+        #=======================================================================
+        mask_fp = self._gdal_calc_mask(wsh_rlay)
+        
+        wse_fp = self._gdal_calc({ 
+            'INPUT_A' : delta_fp, 'BAND_A' : 1, 'INPUT_B' : mask_fp, 'BAND_B' : 1, 
+            'FORMULA':'A*B',            
+            'NO_DATA' : -9999,  'OUTPUT' : OUTPUT, 'RTYPE' : 5, 
+                   })
+        
+        f.pushInfo(f'\n\napplied mask and got \n    {wse_fp}')
+        #=======================================================================
+        # check
+        #=======================================================================
+        stats_d = self._rasterlayerstatistics(wse_fp)
+        
+        stats_d['null_cnt'] = getNoDataCount(wse_fp)
+        
+        
+        f.pushInfo(f'WSE grid computed w/\n%s'%{'%.2f'%stats_d[k] for k in ['MAX', 'MEAN', 'MIN', 'SUM']})
+        
+        if not stats_d['null_cnt']>0:
+            f.pushWarning(f'WSE result has no nulls (dry cells)')
+            
+        if stats_d['MIN']==0:
+            f.pushWarning('WSE result has a min of zero')
+            
+        return wse_fp
  
         
     def _init_algo(self, params, context, feedback,
@@ -466,3 +536,31 @@ def assert_extent_equal(left, right, msg='',):
 
 def rlay_get_shape(r):
     return (r.height(), r.width())
+
+
+def getNoDataCount(fp, **kwargs):
+    """2022-05-10: this was returning some nulls
+    for rasters where I could not find any nulls"""
+    #get raw data
+    ar = rlay_to_array(fp, **kwargs)
+    
+    return np.isnan(ar).astype(int).sum()
+
+def rlay_to_array(rlay_fp, dtype=np.dtype('float32')):
+    """context managger?"""
+    #get raw data
+    ds = gdal.Open(rlay_fp)
+    band = ds.GetRasterBand(1)
+    
+    
+    ar_raw = np.array(band.ReadAsArray(), dtype=dtype)
+    
+    #remove nodata values
+    ndval = band.GetNoDataValue()
+    
+ 
+    
+    del ds
+    del band
+    
+    return np.where(ar_raw==ndval, np.nan, ar_raw)
