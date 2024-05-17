@@ -139,7 +139,7 @@ class Dscale(QgsProcessingAlgorithm):
 
             <h3>Attribution</h3>
             If you use these tools for your work, please cite the following:
-            <a href="https://doi.org/10.5194/hess-2023-156">Bryant et. al., (2023)</a>
+            <a href="https://doi.org/10.5194/hess-28-575-2024">Bryant et. al., (2024)</a>
             <a href="https://jblindsay.github.io/ghrg/pubs/LindsayGISRUK2014.pdf">Lindsay (2021)</a>
             """
 
