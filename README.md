@@ -7,13 +7,15 @@ QGIS Processing scripts for rescaling or changing the resolution of flood hazard
 Tested against QGIS 3.34.5
 
 ## UPDATES
--**2024 01 19**: new *pixel* based isolated filter for the *Resolution Enhancer* tool
+-**2024 05 17**: added *Water Grid from Complement* tool to easily convert between WSE and WSH grids
+-**2024 01 19**: added *pixel* based isolated filter for the *Resolution Enhancer* tool
 
 
 ## 01 Description
 Includes the following tools:
 - **Resolution Enhancer (WSE)**: Three methods for interpolating a high resolution WSE grid using a high resolution DEM and simple hydraulic assumptions described in [Bryant et. al., (2022)](https://hess.copernicus.org/preprints/hess-2023-156/). For more advanced applications and features, see the [FloodDownscaler2](https://github.com/cefect/FloodDownscaler2) project.
 - **Aggregation via Averaging**: Two methods for coarsening flood hazard grids described in [Bryant et. al., (2022)](https://doi.org/10.1029/2023WR035100)
+- **Water Grid from Complement**: Two tools to generate a Water Surface Elevation (WSE) or Water Surface Height (WSH) grid from its complement and a DEM.
 
 
 The algorithms are tested against QGIS 3.28.11 and require [WhiteboxTools for QGIS plugin](https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html).
