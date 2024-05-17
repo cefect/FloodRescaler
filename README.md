@@ -13,8 +13,8 @@ Tested against QGIS 3.34.5
 
 ## 01 Description
 Includes the following tools:
-- **Resolution Enhancer (WSE)**: Three methods for interpolating a high resolution WSE grid using a high resolution DEM and simple hydraulic assumptions described in [Bryant et. al., (2022)](https://hess.copernicus.org/preprints/hess-2023-156/). For more advanced applications and features, see the [FloodDownscaler2](https://github.com/cefect/FloodDownscaler2) project. Requires [WhiteboxTools for QGIS plugin](https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html).
-- **Aggregation via Averaging**: Two methods for coarsening flood hazard grids described in [Bryant et. al., (2022)](https://doi.org/10.1029/2023WR035100)
+- **Resolution Enhancer (WSE)**: Three methods for interpolating a high resolution WSE grid using a high resolution DEM and simple hydraulic assumptions described in [Bryant et. al., (2024)](https://doi.org/10.5194/hess-28-575-2024). For more advanced applications and features, see the [FloodDownscaler2](https://github.com/cefect/FloodDownscaler2) project. Requires [WhiteboxTools for QGIS plugin](https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html).
+- **Aggregation via Averaging**: Two methods for coarsening flood hazard grids described in [Bryant et. al., (2023)](https://doi.org/10.1029/2023WR035100)
 - **Water Grid from Complement**: Two tools to generate a Water Surface Elevation (WSE) or Water Surface Height (WSH) grid from its complement and a DEM.
 
  
@@ -65,12 +65,16 @@ If you use these tools for your work, please cite the following:
 ### Resolution Enhancement
 
 ```
-@article{bryant_resolution_2023,
-	title = {Resolution {Enhancement} of {Flood} {Inundation} {Grids} [in review]},
-	doi = {10.5194/hess-2023-156},
-	journal = {Hydrology and Earth System Sciences},
-	author = {Bryant, Seth and Guy, Schumann and Heiko, Apel and Heidi, Kreibich and Bruno, Merz},
-	year = {2023},
+@Article{hess-28-575-2024,
+	AUTHOR = {Bryant, S. and Schumann, G. and Apel, H. and Kreibich, H. and Merz, B.},
+	TITLE = {Technical Note: Resolution enhancement of flood inundation grids},
+	JOURNAL = {Hydrology and Earth System Sciences},
+	VOLUME = {28},
+	YEAR = {2024},
+	NUMBER = {3},
+	PAGES = {575--588},
+	URL = {https://hess.copernicus.org/articles/28/575/2024/},
+	DOI = {10.5194/hess-28-575-2024}
 }
 
 
