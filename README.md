@@ -7,8 +7,8 @@ QGIS Processing scripts for rescaling or changing the resolution of flood hazard
 Tested against QGIS 3.34.5
 
 ## UPDATES
--**2024 05 17**: added *Water Grid from Complement* tool to easily convert between WSE and WSH grids
--**2024 01 19**: added *pixel* based isolated filter for the *Resolution Enhancer* tool
+- **2024 05 17**: added *Water Grid from Complement* tool to easily convert between WSE and WSH grids
+- **2024 01 19**: added *pixel* based isolated filter for the *Resolution Enhancer* tool
 
 
 ## 01 Description
