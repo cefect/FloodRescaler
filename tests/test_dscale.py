@@ -43,10 +43,10 @@ def output_params(qproj, tmpdir):
     ('CostGrow', dict(filter_isolated_kwargs=dict(method='area'))),
     ('CostGrow', dict(filter_isolated_kwargs=dict(method='pixel'))),   
     ])
-def test_runner(dem,wse,   method, skwargs,
+def test_runner(dem_layer, wse_layer,   method, skwargs,
                 output_params, context, feedback, wbt_init, tmpdir):
     """test the main runner""" 
-    assert isinstance(dem, QgsRasterLayer)
+    assert isinstance(dem_layer, QgsRasterLayer)
     
     #execute
     algo=Dscale()
@@ -55,7 +55,7 @@ def test_runner(dem,wse,   method, skwargs,
     
  
     
-    res_d = algo.run_dscale( dem, wse, method, **skwargs)
+    res_d = algo.run_dscale( dem_layer, wse_layer, method, **skwargs)
     
     #validate
     assert isinstance(res_d, dict)

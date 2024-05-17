@@ -1,2 +1,2 @@
-pytest==7.4.2 #needed for tests
-pytest-qgis==1.3.5 #needed for tests
+pytest #needed for tests
+pytest-qgis==2.0.* #needed for tests
