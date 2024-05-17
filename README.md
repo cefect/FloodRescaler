@@ -23,12 +23,16 @@ The algorithms are tested against QGIS 3.28.11 and require [WhiteboxTools for QG
 ## 02 Installation Instructions
 
 ### download the scripts
-download the algorithms of interest from the [processing folder](floodrescaler/processing) to your local machine
+Download the *floodrescaler.zip* archive from the [latest release](https://github.com/cefect/FloodRescaler/releases) then unzip to your local machine.
+
+Alternatively, download the processing scripts of interest from the [processing folder](floodrescaler/processing) source code directly.  
 
 ### add to your QGIS profile
 In the QGIS [Processing Toolbox](https://docs.qgis.org/3.22/en/docs/user_manual/processing/toolbox.html#the-toolbox), select the python icon drop down ![Scripts](/assets/mIconPythonFile.png) , and `Add Script to Toolbox...`. This should load new algorithms to the `Scripts/FloodRescaling` group on the Processing Toolbox as shown below:
 
 ![screen capture](/assets/processingToolbox_screengrab.png)
+
+Alternatively, add the unzipped folder as a *Scripts folder* to your QGIS profile: Settings >  Processing > Scripts > Scripts folders
 
 ### install and configure WhiteboxTools
 Ensure the [WhiteboxTools for QGIS plugin](https://www.whiteboxgeo.com/manual/wbt_book/qgis_plugin.html) is installed and configured. 
